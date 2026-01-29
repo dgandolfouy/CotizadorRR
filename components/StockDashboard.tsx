@@ -14,121 +14,12 @@ declare global {
   }
 }
 
-// --- VISUALIZADOR DE JUMBO (ESTILO 3D REALISTA) ---
-const JumboVisualizer: React.FC<{ 
-    jumboWidth: number; 
-    cuts: CutDefinition[]; 
-    onDeleteCut?: (id: string) => void;
-}> = ({ jumboWidth, cuts, onDeleteCut }) => {
-    
-    // Calcular ancho usado
-    const usedWidth = cuts.reduce((acc, cut) => acc + (cut.width * cut.quantity), 0);
-    const remainingWidth = jumboWidth - usedWidth;
-    const isOverflow = remainingWidth < 0;
-
-    // Generar carriles visuales planos
-    const visualLanes: { width: number, parentId: string }[] = [];
-    cuts.forEach(cut => {
-        for(let i=0; i<cut.quantity; i++) {
-            visualLanes.push({ width: cut.width, parentId: cut.id });
-        }
-    });
-    
-    visualLanes.sort((a,b) => b.width - a.width);
-
-    // Colores industriales para los cortes
-    const getBgColor = (index: number) => {
-        const colors = [
-            'bg-[#f97316]', // Orange 500
-            'bg-[#ea580c]', // Orange 600
-            'bg-[#fb923c]', // Orange 400
-            'bg-[#c2410c]', // Orange 700
-        ];
-        return colors[index % colors.length];
-    };
-
-    return (
-        <div className="w-full flex flex-col items-center py-6 px-4 select-none">
-            {/* Header Datos */}
-            <div className="w-full flex justify-between items-end mb-6 px-4 max-w-4xl">
-                <div className="text-center">
-                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest block mb-1">Ancho Master</span>
-                    <span className="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-white font-mono font-bold shadow-lg">
-                        {jumboWidth}mm
-                    </span>
-                </div>
-                <div className="text-right">
-                    <span className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isOverflow ? 'text-red-500' : 'text-gray-400'}`}>
-                        {isOverflow ? 'EXCESO' : 'REMANENTE'}
-                    </span>
-                    <span className={`font-mono font-bold text-xl ${isOverflow ? 'text-red-500' : 'text-emerald-500'}`}>
-                        {Math.abs(remainingWidth)}mm
-                    </span>
-                </div>
-            </div>
-
-            {/* GRÁFICO CILINDRO 3D */}
-            <div className="relative h-40 w-full max-w-4xl mx-auto perspective-1000">
-                {/* Sombra de piso */}
-                <div className="absolute -bottom-6 left-4 right-4 h-6 bg-black/40 rounded-[100%] blur-xl z-0 transform scale-x-95"></div>
-
-                <div className="relative h-full w-full z-10 flex items-center">
-                    
-                    {/* Tapa Izquierda (Core) - Perspectiva 3D */}
-                    <div className="absolute left-0 top-0 bottom-0 w-12 z-30 rounded-[100%] bg-[#333] border-l border-gray-600 shadow-2xl flex items-center justify-center transform -translate-x-1/2 overflow-hidden box-border bg-gradient-to-r from-[#222] to-[#444]">
-                        {/* Agujero del Core */}
-                        <div className="w-5 h-20 bg-[#111] rounded-[100%] shadow-[inset_0_0_10px_#000] border border-gray-700"></div>
-                        <div className="absolute inset-0 rounded-[100%] ring-1 ring-white/10"></div>
-                    </div>
-
-                    {/* Cuerpo del Jumbo */}
-                    <div className="flex-1 h-full flex relative overflow-hidden z-20 w-full rounded-r-lg shadow-inner bg-[#2a2a2a]">
-                       
-                       {/* Overlay de Iluminación Cilíndrica (Luces y Sombras) */}
-                       <div className="absolute inset-0 z-40 pointer-events-none bg-gradient-to-b from-black/60 via-transparent to-black/50"></div>
-                       <div className="absolute inset-0 z-40 pointer-events-none bg-gradient-to-b from-transparent via-white/10 to-transparent opacity-50" style={{top: '20%', bottom: '40%'}}></div>
-
-                       {visualLanes.map((lane, idx) => {
-                           const widthPercent = (lane.width / jumboWidth) * 100;
-                           return (
-                               <div 
-                                   key={`${lane.parentId}-${idx}`}
-                                   style={{ width: `${widthPercent}%` }}
-                                   className={`h-full relative flex-shrink-0 border-r border-black/20 ${getBgColor(idx)}`}
-                               >
-                                   {/* Etiqueta de medida */}
-                                   <div className="absolute inset-0 flex flex-col items-center justify-center text-white z-50 overflow-hidden">
-                                       <span className="font-black text-lg sm:text-2xl drop-shadow-md transform scale-y-110">{lane.width}</span>
-                                   </div>
-                               </div>
-                           );
-                       })}
-
-                       {/* Espacio Remanente */}
-                       {!isOverflow && (
-                           <div className="flex-1 h-full relative bg-[#374151] min-w-0 flex items-center justify-center border-l border-black/30">
-                               <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
-                               <span className="text-gray-500 font-bold text-xs tracking-[0.3em] opacity-60 rotate-0 whitespace-nowrap px-1 z-50">
-                                   DISPONIBLE
-                               </span>
-                           </div>
-                       )}
-                    </div>
-
-                    {/* Tapa Derecha (Curvatura final) */}
-                    <div className="absolute right-0 top-0 bottom-0 w-4 z-10 bg-gradient-to-l from-black/40 to-transparent"></div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 // --- HELPER: COLOR MAPPING ---
 const getColorForMaterial = (code: string, name: string): string => {
     const codePrefix = code.substring(0, 3);
     const upperName = name.toUpperCase();
     if (codePrefix === '002') return '#00C2CB'; 
-    if (codePrefix === '003') return 'linear-gradient(135deg, #E3C363 0%, #FFF3B5 50%, #E3C363 100%)'; 
+    if (codePrefix === '003') return '#E3C363'; 
     if (codePrefix === '011') return '#7B5836';
     if (codePrefix === '013') return '#FFE900';
     if (codePrefix === '014') return '#00A651';
@@ -136,12 +27,12 @@ const getColorForMaterial = (code: string, name: string): string => {
     if (codePrefix === '017') return '#D6C6D8';
     if (codePrefix === '043') return '#D9D9D9';
     if (codePrefix === '046') return '#231F20';
-    if (codePrefix === '047') return 'linear-gradient(to right, #D4AF37, #FEE180)';
+    if (codePrefix === '047') return '#D4AF37';
     if (codePrefix === '258') return '#F58220';
     if (codePrefix === '260') return '#0066B3';
     if (codePrefix === '266') return '#EE4023';
     if (codePrefix === '267') return '#8DC63F';
-    if (codePrefix === '268') return 'repeating-linear-gradient(45deg, #ffffff, #ffffff 10px, #ffcccc 10px, #ffcccc 11px)';
+    if (codePrefix === '268') return '#ffcccc';
     if (codePrefix === '355') return '#ED1C24';
     if (codePrefix === '361') return '#2E3192';
     if (codePrefix === '459') return '#D9E021';
@@ -155,14 +46,180 @@ const getColorForMaterial = (code: string, name: string): string => {
     if (codePrefix === '863') return '#92278F';
     if (upperName.includes('RIBBON')) return '#212121';
     if (upperName.includes('LAMINADO')) return '#9e9e9e';
-    if (upperName.includes('HOT')) return 'linear-gradient(to right, #b8860b, #ffd700)';
-    if (upperName.includes('COLD')) return 'linear-gradient(to right, #c0c0c0, #e0e0e0)';
-    return '#ea580c'; 
+    if (upperName.includes('HOT')) return '#b8860b';
+    if (upperName.includes('COLD')) return '#c0c0c0';
+    return '#ea580c'; // Default Orange
 };
 
 const shouldUseBlackText = (code: string): boolean => {
-    const lightCodes = ['002', '013', '017', '043', '268', '459', '602', '003'];
+    const lightCodes = ['002', '013', '017', '043', '268', '459', '602', '003', '603', '647', '827'];
     return lightCodes.includes(code.substring(0, 3));
+};
+
+// Helper para convertir Hex a RGB para PDF
+const hexToRgb = (hex: string) => {
+    let c: any;
+    if(/^#([A-Fa-f0-9]{3}){1,2}$/.test(hex)){
+        c= hex.substring(1).split('');
+        if(c.length== 3){
+            c= [c[0], c[0], c[1], c[1], c[2], c[2]];
+        }
+        c= '0x'+c.join('');
+        return [(c>>16)&255, (c>>8)&255, c&255];
+    }
+    return [200, 200, 200]; // Default grey
+}
+
+// --- VISUALIZADOR DE JUMBO (ESTILO 3D REALISTA + ETIQUETAS INTELIGENTES) ---
+const JumboVisualizer: React.FC<{ 
+    jumboWidth: number; 
+    cuts: CutDefinition[]; 
+    materialCode: string;
+    materialName: string;
+    onDeleteCut?: (id: string) => void;
+}> = ({ jumboWidth, cuts, materialCode, materialName, onDeleteCut }) => {
+    
+    // Calcular ancho usado
+    const usedWidth = cuts.reduce((acc, cut) => acc + (cut.width * cut.quantity), 0);
+    const remainingWidth = jumboWidth - usedWidth;
+    const isOverflow = remainingWidth < 0;
+
+    // Obtener color base del material
+    const baseColor = getColorForMaterial(materialCode, materialName);
+    // Verificar si necesitamos texto oscuro sobre este color
+    const isLightColor = shouldUseBlackText(materialCode);
+    const textColorClass = isLightColor ? 'text-gray-900' : 'text-white';
+
+    // Generar carriles visuales
+    const visualLanes: { width: number, parentId: string }[] = [];
+    cuts.forEach(cut => {
+        for(let i=0; i<cut.quantity; i++) {
+            visualLanes.push({ width: cut.width, parentId: cut.id });
+        }
+    });
+    
+    // Ordenar de mayor a menor
+    visualLanes.sort((a,b) => b.width - a.width);
+
+    return (
+        <div className="w-full flex flex-col items-center py-10 px-4 select-none overflow-visible">
+            {/* Header Datos */}
+            <div className="w-full flex justify-between items-end mb-8 px-4 max-w-4xl">
+                <div className="text-center">
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest block mb-1">Ancho Master</span>
+                    <span className="bg-gray-800 border border-gray-600 px-3 py-1 rounded text-white font-mono font-bold shadow-lg">
+                        {jumboWidth}mm
+                    </span>
+                </div>
+                
+                {/* Badge Material Central */}
+                <div className="flex flex-col items-center -mb-2">
+                    <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-1">Material Base</span>
+                    <div 
+                        className="h-6 px-3 rounded-full flex items-center justify-center shadow-md border border-white/10"
+                        style={{ backgroundColor: baseColor }}
+                    >
+                        <span className={`text-xs font-bold ${textColorClass}`}>{materialCode || 'N/A'}</span>
+                    </div>
+                </div>
+
+                <div className="text-right">
+                    <span className={`text-[10px] font-bold uppercase tracking-widest block mb-1 ${isOverflow ? 'text-red-500' : 'text-gray-400'}`}>
+                        {isOverflow ? 'EXCESO' : 'REMANENTE'}
+                    </span>
+                    <span className={`font-mono font-bold text-xl ${isOverflow ? 'text-red-500' : 'text-emerald-500'}`}>
+                        {Math.abs(remainingWidth)}mm
+                    </span>
+                </div>
+            </div>
+
+            {/* GRÁFICO CILINDRO 3D */}
+            <div className="relative h-48 w-full max-w-4xl mx-auto perspective-1000 mt-6">
+                {/* Sombra de piso */}
+                <div className="absolute -bottom-6 left-4 right-4 h-6 bg-black/40 rounded-[100%] blur-xl z-0 transform scale-x-95"></div>
+
+                <div className="relative h-full w-full z-10 flex items-center">
+                    
+                    {/* Tapa Izquierda (Core) - Perspectiva 3D */}
+                    <div className="absolute left-0 top-0 bottom-0 w-12 z-30 rounded-[100%] bg-[#333] border-l border-gray-600 shadow-2xl flex items-center justify-center transform -translate-x-1/2 overflow-hidden box-border bg-gradient-to-r from-[#222] to-[#444]">
+                        {/* Agujero del Core */}
+                        <div className="w-5 h-20 bg-[#111] rounded-[100%] shadow-[inset_0_0_10px_#000] border border-gray-700"></div>
+                        <div className="absolute inset-0 rounded-[100%] ring-1 ring-white/10"></div>
+                    </div>
+
+                    {/* Cuerpo del Jumbo */}
+                    <div className="flex-1 h-full flex relative overflow-visible z-20 w-full rounded-r-lg shadow-inner bg-[#2a2a2a]">
+                       
+                       {/* Background Layer with Material Color */}
+                       <div className="absolute inset-0 z-0 overflow-hidden rounded-r-lg">
+                            <div 
+                                className="absolute inset-0 w-full h-full opacity-90" 
+                                style={{ backgroundColor: baseColor }}
+                            ></div>
+                            {/* Texture Overlay */}
+                            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/stardust.png')] opacity-20 mix-blend-overlay"></div>
+                       </div>
+
+                       {/* Overlay de Iluminación Cilíndrica (Luces y Sombras Globales) */}
+                       <div className="absolute inset-0 z-40 pointer-events-none rounded-r-lg bg-gradient-to-b from-white/30 via-transparent to-black/40"></div>
+                       <div className="absolute inset-0 z-40 pointer-events-none rounded-r-lg bg-gradient-to-b from-transparent via-white/20 to-transparent" style={{top: '15%', bottom: '55%'}}></div>
+
+                       {visualLanes.map((lane, idx) => {
+                           const widthPercent = (lane.width / jumboWidth) * 100;
+                           // Umbral para decidir si la etiqueta va adentro o afuera
+                           const isNarrow = widthPercent < 5; 
+
+                           return (
+                               <div 
+                                   key={`${lane.parentId}-${idx}`}
+                                   style={{ width: `${widthPercent}%` }}
+                                   className={`h-full relative flex-shrink-0 border-r border-black/10 group`}
+                               >
+                                   {/* Línea de separación sutil */}
+                                   <div className="absolute right-0 top-0 bottom-0 w-[1px] bg-black/20 z-30"></div>
+
+                                   {/* Etiqueta de medida */}
+                                   <div className={`absolute inset-0 flex flex-col items-center justify-center z-50 ${isNarrow ? '' : 'overflow-hidden'}`}>
+                                       
+                                       {isNarrow ? (
+                                           // ETIQUETA FLOTANTE (ARRIBA) PARA CORTES ANGOSTOS
+                                           <div className="absolute bottom-full mb-2 flex flex-col items-center animate-fade-in-up">
+                                               {/* Línea conectora */}
+                                               <div className="w-[1px] h-8 bg-gray-400 absolute top-full left-1/2 -translate-x-1/2"></div>
+                                               <div className="w-1.5 h-1.5 bg-gray-400 rounded-full absolute top-full mt-8 left-1/2 -translate-x-1/2"></div>
+                                               
+                                               <span className="bg-gray-800 text-white text-[10px] font-bold px-1.5 py-0.5 rounded shadow-sm whitespace-nowrap border border-gray-600">
+                                                   {lane.width}
+                                               </span>
+                                           </div>
+                                       ) : (
+                                           // ETIQUETA INTERNA PARA CORTES ANCHOS
+                                           <span className={`font-black text-lg sm:text-2xl drop-shadow-md transform scale-y-110 ${textColorClass} opacity-90`}>
+                                               {lane.width}
+                                           </span>
+                                       )}
+                                   </div>
+                               </div>
+                           );
+                       })}
+
+                       {/* Espacio Remanente */}
+                       {!isOverflow && (
+                           <div className="flex-1 h-full relative bg-[#374151] min-w-0 flex items-center justify-center border-l border-black/30 rounded-r-lg z-10">
+                               <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')] opacity-20"></div>
+                               <span className="text-gray-500 font-bold text-xs tracking-[0.3em] opacity-60 rotate-0 whitespace-nowrap px-1 z-50">
+                                   LIBRE
+                               </span>
+                           </div>
+                       )}
+                    </div>
+
+                    {/* Tapa Derecha (Curvatura final - Sombra suavizada) */}
+                    <div className="absolute right-0 top-0 bottom-0 w-4 z-50 bg-gradient-to-l from-black/50 to-transparent pointer-events-none rounded-r-lg"></div>
+                </div>
+            </div>
+        </div>
+    );
 };
 
 // --- SELECTOR MATERIAL POR FAMILIA ---
@@ -584,52 +641,108 @@ const StockDashboard: React.FC = () => {
 
                 y = (doc as any).lastAutoTable.finalY + 10;
                 
-                // ESQUEMA VISUAL SIMPLE (RECTÁNGULO)
+                // ESQUEMA VISUAL EN PDF (SIMULACIÓN CILINDRO MEJORADA)
                 if (jumbo.cuts.length > 0) {
                     if (y > 230) { doc.addPage(); y = 20; }
                     doc.setFontSize(9);
                     doc.setTextColor(100);
                     doc.text("Esquema de Corte (1 Jumbo):", 20, y);
-                    y += 5;
+                    
+                    // --- COLOR BADGE ---
+                    // Dibujar círculo con color del material y código dentro
+                    const badgeX = 75; // Posición al lado del título
+                    const badgeY = y - 1;
+                    const matColorHex = getColorForMaterial(jumbo.materialCode, jumbo.materialName);
+                    const matRgb = hexToRgb(matColorHex);
+                    
+                    doc.setFillColor(matRgb[0], matRgb[1], matRgb[2]);
+                    doc.setDrawColor(50);
+                    doc.circle(badgeX, badgeY, 3.5, 'FD'); // Filled & Stroked Circle
+                    
+                    // Texto dentro del badge (código)
+                    doc.setFontSize(6);
+                    doc.setTextColor(shouldUseBlackText(jumbo.materialCode) ? 0 : 255);
+                    doc.text(jumbo.materialCode, badgeX, badgeY + 1, { align: 'center' });
 
+                    y += 8;
+
+                    // --- DRAWING CYLINDER ---
                     const schemaWidth = 170;
-                    const schemaHeight = 15;
+                    const cylinderHeight = 18;
                     const usedWidth = jumbo.cuts.reduce((acc, c) => acc + (c.width * c.quantity), 0);
                     const scale = schemaWidth / jumbo.jumboWidth;
                     let currentX = 20;
 
-                    // Fondo Jumbo
-                    doc.setFillColor(230, 230, 230);
-                    doc.rect(20, y, schemaWidth, schemaHeight, 'F');
+                    // 1. Dibujar elipse izquierda (el core) para dar profundidad
+                    const ellipseWidth = 4;
+                    const cylinderY = y + (cylinderHeight / 2);
                     
-                    // Carriles
+                    doc.setFillColor(60, 60, 60); // Dark Core
+                    doc.ellipse(currentX, cylinderY, ellipseWidth, cylinderHeight / 2, 'F');
+                    
+                    // Core hole
+                    doc.setFillColor(20, 20, 20);
+                    doc.ellipse(currentX, cylinderY, ellipseWidth / 2, cylinderHeight / 4, 'F');
+
+                    // 2. Dibujar cuerpo del cilindro (Rectángulos coloreados)
+                    // Ajustar inicio X para que conecte con la mitad de la elipse
+                    
                     jumbo.cuts.forEach(cut => {
                         for(let i=0; i<cut.quantity; i++) {
                             const w = cut.width * scale;
-                            doc.setFillColor(200, 200, 200); 
-                            doc.setDrawColor(0);
-                            doc.rect(currentX, y, w, schemaHeight, 'FD'); 
                             
-                            if (w > 8) {
-                                doc.setFontSize(6);
-                                doc.setTextColor(0);
-                                doc.text(`${cut.width}`, currentX + (w/2), y + 10, { align: 'center' });
+                            // Color del material base (claro)
+                            doc.setFillColor(240, 240, 240); 
+                            doc.setDrawColor(150); // Borde sutil
+                            
+                            // Dibujar rectángulo del corte
+                            doc.rect(currentX, y, w, cylinderHeight, 'FD');
+                            
+                            // Simular brillo superior (línea blanca semi-transparente no soportada, usamos gris muy claro)
+                            // jspdf no soporta gradientes complejos fácilmente, así que mantenemos simple pero limpio.
+                            
+                            if (w > 6) {
+                                doc.setFontSize(7);
+                                doc.setTextColor(50);
+                                doc.text(`${cut.width}`, currentX + (w/2), y + 11, { align: 'center' });
                             }
                             currentX += w;
                         }
                     });
+                    
+                    // 3. Dibujar tapa derecha (curva)
+                    // Dibujamos un arco o media elipse para cerrar el cilindro
+                    // En jspdf básico, una elipse completa tapada por un rect blanco funciona visualmente
+                    // O simplemente dejamos el borde recto como corte limpio. 
+                    // Para simular 3D, el borde derecho debería seguir la curva de la elipse.
+                    
+                    // Simulación simple: Dibujar elipse final en el borde derecho del último corte
+                    // Usamos el mismo color del último corte o gris si es remanente
                     
                     // Remanente
                     const remanente = jumbo.jumboWidth - usedWidth;
                     if (remanente > 0) {
                         const remX = 20 + (usedWidth * scale);
                         const remW = schemaWidth - (usedWidth * scale);
+                        
+                        doc.setFillColor(220, 220, 220); // Gris remanente
+                        doc.rect(remX, y, remW, cylinderHeight, 'F');
+                        
                         if (remW > 15) {
-                            doc.setTextColor(150);
-                            doc.text(`Libre: ${remanente}mm`, remX + (remW/2), y + 10, { align: 'center' });
+                            doc.setTextColor(100);
+                            doc.text(`Libre: ${remanente}`, remX + (remW/2), y + 11, { align: 'center' });
                         }
+                        
+                        // Tapa final en el remanente
+                        doc.setFillColor(200, 200, 200);
+                        doc.ellipse(remX + remW, cylinderY, ellipseWidth, cylinderHeight / 2, 'F');
+                    } else {
+                        // Tapa final en el último corte
+                        doc.setFillColor(220, 220, 220); // Color neutro para el corte final
+                        doc.ellipse(currentX, cylinderY, ellipseWidth, cylinderHeight / 2, 'F');
                     }
-                    y += 25;
+
+                    y += 30;
                 }
             });
 
@@ -842,7 +955,7 @@ const StockDashboard: React.FC = () => {
 
                                             {/* DERECHA: Visualizador */}
                                             <div className="w-full lg:w-2/3 flex flex-col bg-gray-100 dark:bg-gray-900 rounded-xl p-4 border border-gray-300 dark:border-gray-800 shadow-inner">
-                                                <JumboVisualizer jumboWidth={currentJumbo.width} cuts={currentCuts} onDeleteCut={deleteCut} />
+                                                <JumboVisualizer jumboWidth={currentJumbo.width} cuts={currentCuts} materialCode={currentJumbo.materialCode} materialName={currentJumbo.materialName} onDeleteCut={deleteCut} />
                                                 
                                                 {/* INPUTS BIDIRECCIONALES (BAJADAS <-> TOTAL) */}
                                                 <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 px-4 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
