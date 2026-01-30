@@ -6,18 +6,12 @@ import { User, UserRole } from '../types';
 import { USERS } from '../constants';
 import { EyeIcon, EyeOffIcon } from './IconComponents';
 import RRLogoFullIcon from './RRLogoFullIcon';
-import SplashScreen from './SplashScreen';
 
 interface LoginProps {
   onLogin: (user: User) => void;
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  // Estado para controlar la intro. Usamos sessionStorage para que salga solo 1 vez por sesión.
-  const [showIntro, setShowIntro] = useState(() => {
-      return !sessionStorage.getItem('rr_has_seen_intro');
-  });
-  
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -28,11 +22,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           setSelectedUserId(USERS[0].id);
       }
   }, [selectedUserId]);
-
-  const handleIntroFinish = () => {
-      sessionStorage.setItem('rr_has_seen_intro', 'true');
-      setShowIntro(false);
-  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,11 +44,6 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   
   const Asistentes = USERS.filter(u => u.role === UserRole.AsistenteComercial);
   const OtrosRoles = USERS.filter(u => u.role !== UserRole.AsistenteComercial);
-
-  // Si la intro está activa, mostramos el SplashScreen en lugar del Login
-  if (showIntro) {
-      return <SplashScreen onFinish={handleIntroFinish} />;
-  }
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-100 dark:bg-gray-900 transition-colors animate-fade-in">
