@@ -1,4 +1,3 @@
-
 export enum QuoteStatus {
   Pendiente = 'Pendiente',
   Cotizado = 'Cotizado',
@@ -106,13 +105,21 @@ export interface JumboDefinition {
     jumboWidth: number;
     cuts: CutDefinition[];
     totalQuantity: number; // Suma de bajadas (informativo)
+    runs?: number;
+}
+
+export interface GeneralPurchaseItem {
+    item: InventoryItem;
+    orderQty: number;
 }
 
 export interface PurchaseOrder {
     id: string; // OC-2024-001
     date: string;
     status: 'Generada' | 'Enviada' | 'Recibida';
-    items: JumboDefinition[];
+    type?: 'Slitter' | 'General'; // Nuevo campo para distinguir el tipo de OC
+    items: JumboDefinition[]; // Para Slitter
+    generalItems?: GeneralPurchaseItem[]; // Nuevo: Para OC General
     notes?: string;
 }
 // --------------------------------------------------
