@@ -13,8 +13,10 @@ interface LoginProps {
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  // Estado para controlar la intro. Se puede usar sessionStorage si solo quieres que salga 1 vez por sesión.
-  const [showIntro, setShowIntro] = useState(true);
+  // Estado para controlar la intro. Usamos sessionStorage para que salga solo 1 vez por sesión.
+  const [showIntro, setShowIntro] = useState(() => {
+      return !sessionStorage.getItem('rr_has_seen_intro');
+  });
   
   const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [password, setPassword] = useState('');
@@ -26,6 +28,11 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           setSelectedUserId(USERS[0].id);
       }
   }, [selectedUserId]);
+
+  const handleIntroFinish = () => {
+      sessionStorage.setItem('rr_has_seen_intro', 'true');
+      setShowIntro(false);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -51,7 +58,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   // Si la intro está activa, mostramos el SplashScreen en lugar del Login
   if (showIntro) {
-      return <SplashScreen onFinish={() => setShowIntro(false)} />;
+      return <SplashScreen onFinish={handleIntroFinish} />;
   }
 
   return (
@@ -62,9 +69,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 <RRLogoFullIcon className="h-32 sm:h-40 w-auto mb-6" />
                 <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Iniciar Sesión</h2>
                 <div className="mt-2 flex items-center justify-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-blue-500"></span>
+                    <span className="h-2 w-2 rounded-full bg-green-500"></span>
                     <p className="text-base sm:text-lg text-gray-600 dark:text-gray-400">
-                      Modo Local (Demo)
+                      Sistema RR Etiquetas
                     </p>
                 </div>
             </div>
@@ -93,7 +100,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
               <div>
                 <label htmlFor="password"className="block text-lg font-medium text-gray-700 dark:text-gray-300">
-                  Contraseña (Default: class123)
+                  Contraseña
                 </label>
                 <div className="relative mt-1">
                   <input
@@ -101,11 +108,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     name="password"
                     type={showPassword ? 'text' : 'password'}
                     autoComplete="current-password"
-                    required
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="block w-full p-3 sm:p-4 text-lg border border-gray-300 dark:border-gray-600 rounded-md shadow-sm bg-white dark:bg-gray-700 focus:ring-orange-500 focus:border-orange-500 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 pr-10"
-                    placeholder="Ingrese su contraseña"
+                    placeholder="Contraseña..."
                   />
                    <button
                       type="button"
@@ -123,12 +129,12 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 </div>
             )}
 
-              <div className="mt-10 sm:mt-16 pt-4">
+              <div className="mt-6">
                 <button
                   type="submit"
                   className="w-full flex justify-center py-3 sm:py-4 px-4 border border-transparent text-lg font-bold rounded-md shadow-md text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 transition-all transform hover:scale-[1.02]"
                 >
-                  Ingresar al Sistema
+                  Ingresar
                 </button>
               </div>
             </form>

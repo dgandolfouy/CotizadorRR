@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import useSystemData from '../hooks/useSystemData';
 import useInventory from '../hooks/useInventory';
 import { InventoryItem, UserRole, PurchaseOrder, JumboDefinition, CutDefinition } from '../types';
-import { CubeIcon, ExclamationIcon, DownloadIcon, SaveIcon, SearchIcon, XIcon, ClipboardCheckIcon, ShoppingCartIcon, PlusIcon, TrashIcon, CheckIcon, EditIcon, EyeIcon, UserIcon } from './IconComponents';
+import { CubeIcon, ExclamationIcon, DownloadIcon, SaveIcon, SearchIcon, XIcon, ClipboardCheckIcon, ShoppingCartIcon, PlusIcon, TrashIcon, CheckIcon, EditIcon, EyeIcon, UserIcon, UndoIcon } from './IconComponents';
 import { useOutletContext } from 'react-router-dom';
 import type { QuoteOutletContext } from './Dashboard';
 import { safeStorage } from '../storage';
@@ -76,8 +76,7 @@ const JumboVisualizer: React.FC<{
     cuts: CutDefinition[]; 
     materialCode: string;
     materialName: string;
-    onDeleteCut?: (id: string) => void;
-}> = ({ jumboWidth, cuts, materialCode, materialName, onDeleteCut }) => {
+}> = ({ jumboWidth, cuts, materialCode, materialName }) => {
     
     // Calcular ancho usado
     const usedWidth = cuts.reduce((acc, cut) => acc + (cut.width * cut.quantity), 0);
@@ -146,8 +145,6 @@ const JumboVisualizer: React.FC<{
                     </div>
 
                     {/* CUERPO DEL ROLLO */}
-                    {/* MODIFICACIÓN: Se eliminó overflow-hidden para que los botones X salgan enteros. 
-                        Se aplica rounded-r-md solo al último elemento visual para mantener la forma. */}
                     <div className="flex-1 h-full flex relative z-20 bg-[#111] rounded-r-md">
                         {/* Segmentos de Corte */}
                         {visualSegments.map((seg, idx) => {
@@ -166,29 +163,14 @@ const JumboVisualizer: React.FC<{
                                         width: `${widthPercent}%`,
                                         backgroundColor: baseColor,
                                         backgroundImage: cylinderGradient,
-                                        filter: toneFilter
+                                        filter: toneFilter,
+                                        zIndex: 30 + idx
                                     }}
                                     className={`h-full relative group flex items-center justify-center border-r border-black/30 border-l border-white/10 box-border ${isLast ? 'rounded-r-md' : ''}`}
                                 >
-                                    {/* Botón Eliminar (MODIFICADO: Siempre visible, más grande y sin opacidad) */}
-                                    {onDeleteCut && (
-                                        <button 
-                                            onClick={(e) => { 
-                                                e.stopPropagation(); 
-                                                if (confirm(`¿Eliminar corte de ${seg.width}mm?`)) {
-                                                    onDeleteCut(seg.parentId);
-                                                }
-                                            }}
-                                            className="absolute -top-4 w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center shadow-md z-50 cursor-pointer border-2 border-white hover:bg-red-700 hover:scale-110 transition-transform"
-                                            title="Eliminar corte"
-                                        >
-                                            <XIcon className="h-3 w-3" />
-                                        </button>
-                                    )}
-
                                     {/* Etiqueta de Medida */}
                                     <span 
-                                        className={`font-black text-xs sm:text-base ${textColorClass} drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] truncate px-0.5 transform scale-y-110 pointer-events-none`}
+                                        className={`font-black text-xs sm:text-base ${textColorClass} drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] truncate px-0.5 transform scale-y-110 pointer-events-none select-none`}
                                         style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.8)' }}
                                     >
                                         {isTiny ? '' : seg.width}
@@ -333,11 +315,14 @@ const StockItemAutocomplete: React.FC<{
 const StockMaterialFamilySelect: React.FC<{ 
     value: string; // Codigo de familia (ej: 014)
     onChange: (code: string, name: string) => void; 
-    inventory: InventoryItem[] 
-}> = ({ value, onChange, inventory }) => {
+    inventory: InventoryItem[];
+    onConfirmSelection?: () => void; // Callback para enfocar siguiente campo
+}> = ({ value, onChange, inventory, onConfirmSelection }) => {
     const [search, setSearch] = useState('');
     const [isOpen, setIsOpen] = useState(false);
+    const [activeIndex, setActiveIndex] = useState(0); // Para navegación con teclado
     const wrapperRef = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     // Agrupar inventario por FAMILIA (primeros 3 digitos)
     const families = useMemo(() => {
@@ -364,7 +349,7 @@ const StockMaterialFamilySelect: React.FC<{
         const found = families.find(f => f.code === value);
         if (found) {
             setSearch(`${found.code} - ${found.name}`);
-        } else if (!value) {
+        } else if (!value && value !== 'S/C') { // 'S/C' es el código para "Sin Código" (texto libre)
             setSearch('');
         }
     }, [value, families]);
@@ -377,43 +362,94 @@ const StockMaterialFamilySelect: React.FC<{
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const filtered = families.filter(f => 
-        f.name.toLowerCase().includes(search.toLowerCase()) || 
-        f.code.includes(search)
-    );
+    const filtered = useMemo(() => {
+        return families.filter(f => 
+            f.name.toLowerCase().includes(search.toLowerCase()) || 
+            f.code.includes(search)
+        );
+    }, [families, search]);
+
+    // Resetear índice activo cuando cambia la búsqueda
+    useEffect(() => {
+        setActiveIndex(0);
+    }, [search]);
+
+    // MANEJO DE TECLADO
+    const handleKeyDown = (e: React.KeyboardEvent) => {
+        if (!isOpen) {
+            if (e.key === 'ArrowDown') setIsOpen(true);
+            return;
+        }
+
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setActiveIndex(prev => (prev < filtered.length - 1 ? prev + 1 : prev));
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setActiveIndex(prev => (prev > 0 ? prev - 1 : prev));
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (filtered.length > 0) {
+                const selected = filtered[activeIndex];
+                onChange(selected.code, selected.name);
+                setIsOpen(false);
+                if (onConfirmSelection) onConfirmSelection();
+            } else if (search.trim()) {
+                // LOGICA AÑADIDA: Permitir texto libre si no hay coincidencias
+                onChange('S/C', search.trim());
+                setIsOpen(false);
+                if (onConfirmSelection) onConfirmSelection();
+            }
+        } else if (e.key === 'Escape') {
+            setIsOpen(false);
+        }
+    };
 
     return (
         <div ref={wrapperRef} className="relative w-full">
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Material (Familia)</label>
             <div className="relative">
                 <input 
+                    ref={inputRef}
                     type="text"
                     value={search}
                     onChange={(e) => { setSearch(e.target.value); setIsOpen(true); onChange('', ''); }}
                     onFocus={() => setIsOpen(true)}
-                    placeholder="Ej: 260 - BOPP..."
+                    onKeyDown={handleKeyDown}
+                    placeholder="Ej: 260 - BOPP o Escribe nombre nuevo..."
                     className="w-full p-2 pl-9 border rounded-md dark:bg-gray-700 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-orange-500 font-bold"
                 />
                 <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 {value && (
-                    <button onClick={() => {onChange('', ''); setSearch('');}} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500">
+                    <button onClick={() => {onChange('', ''); setSearch(''); inputRef.current?.focus();}} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500">
                         <XIcon className="h-4 w-4" />
                     </button>
                 )}
             </div>
             {isOpen && (
                 <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
-                    {filtered.map(f => (
+                    {filtered.map((f, idx) => (
                         <div 
                             key={f.code}
-                            onClick={() => { onChange(f.code, f.name); setIsOpen(false); }}
-                            className="px-4 py-2 hover:bg-orange-50 dark:hover:bg-gray-700 cursor-pointer flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 text-sm"
+                            onClick={() => { onChange(f.code, f.name); setIsOpen(false); if (onConfirmSelection) onConfirmSelection(); }}
+                            className={`px-4 py-2 cursor-pointer flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 text-sm ${idx === activeIndex ? 'bg-orange-100 dark:bg-orange-900/40' : 'hover:bg-orange-50 dark:hover:bg-gray-700'}`}
                         >
                             <span className="font-mono font-bold bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 px-2 rounded text-xs">{f.code}</span>
                             <span className="dark:text-white truncate">{f.name}</span>
                         </div>
                     ))}
-                    {filtered.length === 0 && <div className="p-3 text-center text-gray-500 text-sm">No encontrado</div>}
+                    
+                    {/* OPCIÓN DE AGREGAR MANUALMENTE SI NO HAY RESULTADOS EXACTOS */}
+                    {filtered.length === 0 && search.trim().length > 0 && (
+                        <div 
+                            onClick={() => { onChange('S/C', search.trim()); setIsOpen(false); if(onConfirmSelection) onConfirmSelection(); }}
+                            className="p-3 text-center text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 font-bold border-t border-gray-100 dark:border-gray-700"
+                        >
+                            + Usar "{search}" (Material Nuevo)
+                        </div>
+                    )}
+                    
+                    {filtered.length === 0 && search.trim().length === 0 && <div className="p-3 text-center text-gray-500 text-sm">No encontrado</div>}
                 </div>
             )}
         </div>
@@ -484,6 +520,10 @@ const StockDashboard: React.FC = () => {
     
     // --- NUEVO ESTADO PARA CÁLCULO INVERSO ---
     const [targetTotalBobinas, setTargetTotalBobinas] = useState<string>('');
+
+    // REFS PARA NAVEGACIÓN TECLADO
+    const widthInputRef = useRef<HTMLInputElement>(null);
+    const qtyInputRef = useRef<HTMLInputElement>(null);
 
     const canEdit = user.role === UserRole.Admin || user.role === UserRole.Cotizador || user.role === UserRole.Gerencia || user.role === UserRole.Director;
 
@@ -606,9 +646,21 @@ const StockDashboard: React.FC = () => {
         setCurrentCuts([...currentCuts, newCut]);
         setInputCutWidth('');
         // setInputCutQty(''); // Mantener qty por comodidad
+        // Re-enfocar el input de medida para añadir otro corte rápidamente
+        setTimeout(() => widthInputRef.current?.focus(), 10);
     };
 
-    const deleteCut = (id: string) => setCurrentCuts(currentCuts.filter(c => c.id !== id));
+    const deleteCut = (id: string) => {
+        setCurrentCuts(prevCuts => prevCuts.filter(c => c.id !== id));
+    };
+
+    const undoLastCut = () => {
+        setCurrentCuts(prev => {
+            const newCuts = [...prev];
+            newCuts.pop();
+            return newCuts;
+        });
+    };
 
     const addJumboToOC = () => {
         if (!currentJumbo.materialId) return alert("Seleccione un material.");
@@ -1406,20 +1458,84 @@ const StockDashboard: React.FC = () => {
                                                     <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ancho Jumbo (mm)</label><input type="number" value={currentJumbo.width} onChange={e => setCurrentJumbo({...currentJumbo, width: parseInt(e.target.value) || 0})} className="w-full p-2 border rounded-md font-bold text-center dark:bg-gray-700 dark:text-white" /></div>
                                                     <div>
                                                         {/* SELECTOR POR FAMILIA (3 DIGITOS) */}
-                                                        <StockMaterialFamilySelect value={currentJumbo.materialId} inventory={inventory} onChange={(code, name) => setCurrentJumbo({...currentJumbo, materialId: code, materialCode: code, materialName: name})} />
+                                                        <StockMaterialFamilySelect 
+                                                            value={currentJumbo.materialId} 
+                                                            inventory={inventory} 
+                                                            onChange={(code, name) => setCurrentJumbo({...currentJumbo, materialId: code, materialCode: code, materialName: name})} 
+                                                            onConfirmSelection={() => widthInputRef.current?.focus()}
+                                                        />
                                                     </div>
                                                 </div>
 
                                                 <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-800 space-y-3">
                                                     <h4 className="text-sm font-bold text-orange-800 dark:text-orange-300 uppercase border-b border-orange-200 pb-1 mb-2">Definir Esquema de Cortes</h4>
                                                     <div className="flex gap-2 items-end">
-                                                        <div className="flex-1"><label className="block text-xs text-gray-500 mb-1">Medida Corte (mm)</label><input type="number" value={inputCutWidth} onChange={e => setInputCutWidth(e.target.value)} className="w-full p-2 border rounded text-center font-bold dark:bg-gray-700 dark:text-white" placeholder="166" /></div>
-                                                        <div className="flex-1"><label className="block text-xs text-gray-500 mb-1">Cant. por Jumbo</label><input type="number" value={inputCutQty} onChange={e => setInputCutQty(e.target.value)} className="w-full p-2 border rounded text-center font-bold dark:bg-gray-700 dark:text-white" placeholder="8" /></div>
+                                                        <div className="flex-1">
+                                                            <label className="block text-xs text-gray-500 mb-1">Medida Corte (mm)</label>
+                                                            <input 
+                                                                ref={widthInputRef}
+                                                                type="number" 
+                                                                value={inputCutWidth} 
+                                                                onChange={e => setInputCutWidth(e.target.value)} 
+                                                                onKeyDown={e => e.key === 'Enter' && qtyInputRef.current?.focus()}
+                                                                className="w-full p-2 border rounded text-center font-bold dark:bg-gray-700 dark:text-white" 
+                                                                placeholder="166" 
+                                                            />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <label className="block text-xs text-gray-500 mb-1">Cant. por Jumbo</label>
+                                                            <input 
+                                                                ref={qtyInputRef}
+                                                                type="number" 
+                                                                value={inputCutQty} 
+                                                                onChange={e => setInputCutQty(e.target.value)} 
+                                                                onKeyDown={e => e.key === 'Enter' && addCut()}
+                                                                className="w-full p-2 border rounded text-center font-bold dark:bg-gray-700 dark:text-white" 
+                                                                placeholder="8" 
+                                                            />
+                                                        </div>
                                                         <button onClick={addCut} className="bg-orange-600 hover:bg-orange-700 text-white p-2 rounded shadow flex items-center justify-center w-10 h-10"><PlusIcon className="h-6 w-6" /></button>
+                                                        {/* BOTÓN DESHACER (Revertir Último) */}
+                                                        <button 
+                                                            onClick={undoLastCut}
+                                                            disabled={currentCuts.length === 0}
+                                                            title="Deshacer último corte"
+                                                            className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 p-2 rounded shadow flex items-center justify-center w-10 h-10 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        >
+                                                            <UndoIcon className="h-5 w-5" />
+                                                        </button>
                                                     </div>
                                                 </div>
 
-                                                <div className="flex flex-col gap-2">
+                                                {/* NUEVO: LISTA DE CORTES AGREGADOS CON BOTÓN ELIMINAR FÁCIL */}
+                                                {currentCuts.length > 0 && (
+                                                    <div className="mt-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                                        <table className="w-full text-sm text-left">
+                                                            <thead className="bg-gray-100 dark:bg-gray-700 text-xs uppercase text-gray-500">
+                                                                <tr>
+                                                                    <th className="px-3 py-2">Corte</th>
+                                                                    <th className="px-3 py-2 text-center">Cant.</th>
+                                                                    <th className="px-3 py-2 text-right"></th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                                                {currentCuts.map((cut, idx) => (
+                                                                    <tr key={cut.id}>
+                                                                        <td className="px-3 py-2 font-bold dark:text-white">{cut.width}mm</td>
+                                                                        <td className="px-3 py-2 text-center text-gray-600 dark:text-gray-300">{cut.quantity}</td>
+                                                                        <td className="px-3 py-2 text-right">
+                                                                            <button type="button" onClick={() => deleteCut(cut.id)} className="text-red-500 hover:text-red-700 p-1 bg-red-50 dark:bg-red-900/20 rounded">
+                                                                                <TrashIcon className="h-4 w-4" />
+                                                                            </button>
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                )}
+
+                                                <div className="flex flex-col gap-2 pt-2">
                                                     <button 
                                                         onClick={addJumboToOC} 
                                                         disabled={isAddButtonDisabled}
@@ -1433,7 +1549,7 @@ const StockDashboard: React.FC = () => {
 
                                             {/* DERECHA: Visualizador */}
                                             <div className="w-full lg:w-2/3 flex flex-col bg-gray-100 dark:bg-gray-900 rounded-xl p-4 border border-gray-300 dark:border-gray-800 shadow-inner">
-                                                <JumboVisualizer jumboWidth={currentJumbo.width} cuts={currentCuts} materialCode={currentJumbo.materialCode} materialName={currentJumbo.materialName} onDeleteCut={deleteCut} />
+                                                <JumboVisualizer jumboWidth={currentJumbo.width} cuts={currentCuts} materialCode={currentJumbo.materialCode} materialName={currentJumbo.materialName} />
                                                 
                                                 {/* INPUTS BIDIRECCIONALES (BAJADAS <-> TOTAL) */}
                                                 <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 px-4 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
