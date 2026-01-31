@@ -1,5 +1,5 @@
 {
-  "name": "Cotizador RR 290126 (Beta no aprobada)",
+  "name": "Cotizador RR 310126 (Beta)",
   "description": "Una aplicación web para gestionar un flujo de trabajo de cotizaciones complejo, permitiendo a los vendedores crear solicitudes, a los cotizadores poner precios y automatizando las notificaciones con la potencia de la API de Gemini.",
   "requestFramePermissions": []
 }

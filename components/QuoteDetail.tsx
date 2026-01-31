@@ -67,10 +67,12 @@ const QuoteDetail: React.FC = () => {
   const isOwner = quote?.vendedorId === user.id;
   const isCotizadorUser = user.role === UserRole.Cotizador;
   const isAdmin = user.role === UserRole.Admin;
+  const isDirector = user.role === UserRole.Director;
 
   const canEditPrices = useMemo(() => {
       if (!quote) return false;
-      if (user.role !== UserRole.Cotizador && user.role !== UserRole.Admin) return false;
+      // Allow Cotizador, Admin AND Director
+      if (user.role !== UserRole.Cotizador && user.role !== UserRole.Admin && user.role !== UserRole.Director) return false;
       if (quote.estado === QuoteStatus.Pendiente) return true;
       if (quote.estado === QuoteStatus.Cotizado) return true;
       return false;
@@ -79,8 +81,8 @@ const QuoteDetail: React.FC = () => {
   const canReactivate = useMemo(() => {
       if (!quote) return false;
       const allowedStatus = [QuoteStatus.Abandonada, QuoteStatus.RechazadoCotizador, QuoteStatus.Rechazado];
-      return allowedStatus.includes(quote.estado) && (isCotizadorUser || isAdmin);
-  }, [quote, isCotizadorUser, isAdmin]);
+      return allowedStatus.includes(quote.estado) && (isCotizadorUser || isAdmin || isDirector);
+  }, [quote, isCotizadorUser, isAdmin, isDirector]);
 
   // --- AUTOMATIZACIÓN DE COSTOS DE HERRAMENTAL (Al Cargar) ---
   useEffect(() => {
@@ -325,7 +327,8 @@ const QuoteDetail: React.FC = () => {
 
   const handleReject = async () => {
       if (!quote) return;
-      const newStatus = user.role === UserRole.Cotizador ? QuoteStatus.RechazadoCotizador : QuoteStatus.Rechazado;         
+      // Director también rechaza como técnico (mismo estado que Cotizador para permitir re-edición fácil)
+      const newStatus = (user.role === UserRole.Cotizador || user.role === UserRole.Director) ? QuoteStatus.RechazadoCotizador : QuoteStatus.Rechazado;         
       await updateQuote({ ...quote, estado: newStatus, motivoRechazo: rejectionReason });
       setShowRejectModal(false);
       navigate('/');
@@ -453,7 +456,7 @@ const QuoteDetail: React.FC = () => {
                     </div>
                     
                     <div className="p-4 sm:p-6">
-                        {/* PANEL DE PRODUCCIÓN Y STOCK (VISIBLE PARA COTIZADOR) */}
+                        {/* PANEL DE PRODUCCIÓN Y STOCK (VISIBLE PARA COTIZADOR Y DIRECTOR) */}
                         {canEditPrices && !isPrinter && !isRibbonSale && (
                             <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-lg border border-blue-200 dark:border-blue-800 mb-6">
                                 <h5 className="font-bold text-blue-800 dark:text-blue-200 mb-3 flex items-center gap-2">
@@ -908,7 +911,7 @@ const QuoteDetail: React.FC = () => {
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4">
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 max-w-lg w-full">
                 <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-4">
-                    {user.role === UserRole.Cotizador ? 'Rechazar Solicitud (Técnico)' : 'Rechazar Cotización'}
+                    {(user.role === UserRole.Cotizador || user.role === UserRole.Director) ? 'Rechazar Solicitud (Técnico)' : 'Rechazar Cotización'}
                 </h3>
                 <textarea value={rejectionReason} onChange={(e) => setRejectionReason(e.target.value)} className="w-full p-3 border rounded-md dark:bg-gray-700 dark:text-white" rows={4} placeholder="Motivo..." />
                 <div className="mt-6 flex justify-end gap-3">

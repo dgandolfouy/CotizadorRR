@@ -91,6 +91,14 @@ export interface InventoryItem {
   colorHex?: string; // Color personalizado para la gráfica
 }
 
+// --- CONFIGURACIÓN DE JUMBOS (ADMIN) ---
+export interface JumboPreset {
+    id: string;
+    materialCode: string; // Familia (ej: 260)
+    defaultWidth: number; // mm
+    defaultLength: number; // metros lineales
+}
+
 // --- TIPOS PARA ORDEN DE COMPRA (JUMBO SLITTER) ---
 export interface CutDefinition {
     id: string;
@@ -104,6 +112,7 @@ export interface JumboDefinition {
     materialName: string;
     materialCode: string;
     jumboWidth: number;
+    jumboLength: number; // Nuevo: Largo en metros lineales del Jumbo (para calcular m2)
     cuts: CutDefinition[];
     totalQuantity: number; // Suma de bajadas (informativo)
     runs?: number;

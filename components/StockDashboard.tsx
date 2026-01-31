@@ -2,17 +2,22 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import useSystemData from '../hooks/useSystemData';
 import useInventory from '../hooks/useInventory';
-import { InventoryItem, UserRole, PurchaseOrder, JumboDefinition, CutDefinition } from '../types';
-import { CubeIcon, ExclamationIcon, DownloadIcon, SaveIcon, SearchIcon, XIcon, ClipboardCheckIcon, ShoppingCartIcon, PlusIcon, TrashIcon, CheckIcon, EditIcon, EyeIcon, UserIcon, UndoIcon } from './IconComponents';
+import { InventoryItem, UserRole, PurchaseOrder, JumboDefinition, CutDefinition, QuoteStatus } from '../types';
+import { CubeIcon, ExclamationIcon, DownloadIcon, SaveIcon, SearchIcon, XIcon, ClipboardCheckIcon, ShoppingCartIcon, PlusIcon, TrashIcon, CheckIcon, EditIcon, EyeIcon, UserIcon, UndoIcon, CalculatorIcon } from './IconComponents';
 import { useOutletContext } from 'react-router-dom';
 import type { QuoteOutletContext } from './Dashboard';
 import { safeStorage } from '../storage';
+import { GOOGLE_SHEET_BOBINAS_URL, GOOGLE_SHEET_RIBBONS_URL, GOOGLE_SHEET_LAMINADOS_URL, GOOGLE_SHEET_HOT_FOIL_URL, GOOGLE_SHEET_COLD_FOIL_URL } from '../constants';
 
 declare global {
   interface Window {
     jspdf: any;
   }
 }
+
+// --- CONSTANTES DE UNIDADES ---
+// Se agregan las unidades solicitadas explícitamente
+const ORDER_UNITS = ['Unidad', 'Metros', 'M2', 'Kilos', 'Cajas', 'Litros', 'Paquetes', 'Rollos'];
 
 // --- HELPER: COLOR MAPPING ---
 const getColorForMaterial = (code: string, name: string): string => {
@@ -95,12 +100,12 @@ const JumboVisualizer: React.FC<{
             visualSegments.push({ width: cut.width, parentId: cut.id });
         }
     });
-    // Ordenar de mayor a menor
+    // Ordenar de mayor a menor para visualización estética (aunque en producción el orden importa, aquí es visual)
     visualSegments.sort((a,b) => b.width - a.width);
 
     // Gradiente Cilindro: Oscuro arriba/abajo, Brillo fuerte al medio-arriba.
-    const cylinderGradient = 'linear-gradient(to bottom, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0.1) 20%, rgba(255,255,255,0.4) 35%, rgba(0,0,0,0.1) 60%, rgba(0,0,0,0.6) 100%)';
-    const remnantGradient = 'linear-gradient(to bottom, #1f2937 0%, #374151 35%, #4b5563 50%, #374151 70%, #111827 100%)';
+    const cylinderGradient = 'linear-gradient(180deg, rgba(0,0,0,0.4) 0%, rgba(255,255,255,0.2) 20%, rgba(255,255,255,0.5) 40%, rgba(0,0,0,0.1) 60%, rgba(0,0,0,0.5) 100%)';
+    const remnantGradient = 'linear-gradient(180deg, #374151 0%, #6b7280 20%, #9ca3af 40%, #4b5563 60%, #1f2937 100%)';
 
     return (
         <div className="w-full flex flex-col items-center py-4 select-none">
@@ -117,10 +122,10 @@ const JumboVisualizer: React.FC<{
                 <div className="flex flex-col items-center -mb-2">
                     <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest mb-1">Material Base</span>
                     <div 
-                        className="h-6 px-3 rounded-full flex items-center justify-center shadow-md border border-white/10"
+                        className="h-8 px-4 rounded-full flex items-center justify-center shadow-lg border-2 border-white/20"
                         style={{ backgroundColor: baseColor }}
                     >
-                        <span className={`text-xs font-bold ${textColorClass}`}>{materialCode || 'N/A'}</span>
+                        <span className={`text-sm font-black ${textColorClass}`}>{materialCode || 'N/A'}</span>
                     </div>
                 </div>
 
@@ -136,26 +141,22 @@ const JumboVisualizer: React.FC<{
 
             {/* REPRESENTACIÓN GRÁFICA CILINDRICA 2D */}
             <div className="w-full px-2 sm:px-6">
-                <div className="relative h-28 sm:h-40 w-full flex items-center shadow-[0_10px_20px_rgba(0,0,0,0.5)] rounded-lg">
+                <div className="relative h-32 sm:h-48 w-full flex items-center shadow-[0_20px_25px_-5px_rgba(0,0,0,0.5)] rounded-lg">
                     
                     {/* CORE (Buje Izquierdo) */}
-                    <div className="h-24 sm:h-36 w-4 sm:w-6 bg-[#222] rounded-[100%] border border-gray-700 relative z-30 flex items-center justify-center shadow-lg -mr-2 sm:-mr-3 flex-shrink-0">
+                    <div className="h-28 sm:h-44 w-6 sm:w-8 bg-[#333] rounded-[100%] border border-gray-600 relative z-30 flex items-center justify-center shadow-xl -mr-3 sm:-mr-4 flex-shrink-0">
                         {/* Agujero interior */}
-                        <div className="w-2 sm:w-3 h-10 sm:h-16 bg-black rounded-[100%] border border-gray-600 shadow-[inset_0_0_5px_black]"></div>
+                        <div className="w-3 sm:w-4 h-16 sm:h-24 bg-black rounded-[100%] border-2 border-gray-500 shadow-[inset_0_0_10px_black]"></div>
                     </div>
 
                     {/* CUERPO DEL ROLLO */}
-                    <div className="flex-1 h-full flex relative z-20 bg-[#111] rounded-r-md">
+                    <div className="flex-1 h-full flex relative z-20 bg-[#222] rounded-r-lg overflow-hidden">
                         {/* Segmentos de Corte */}
                         {visualSegments.map((seg, idx) => {
                             const widthPercent = (seg.width / jumboWidth) * 100;
                             // Umbral para etiqueta flotante si es muy chico
-                            const isTiny = widthPercent < 5; 
-                            const isLast = idx === visualSegments.length - 1 && remainingWidth <= 0 && !isOverflow;
+                            const isTiny = widthPercent < 8; 
                             
-                            // Variación tonal alternada para separar visualmente los cortes
-                            const toneFilter = idx % 2 !== 0 ? 'brightness(0.85) contrast(1.1)' : 'none';
-
                             return (
                                 <div 
                                     key={idx}
@@ -163,22 +164,21 @@ const JumboVisualizer: React.FC<{
                                         width: `${widthPercent}%`,
                                         backgroundColor: baseColor,
                                         backgroundImage: cylinderGradient,
-                                        filter: toneFilter,
                                         zIndex: 30 + idx
                                     }}
-                                    className={`h-full relative group flex items-center justify-center border-r border-black/30 border-l border-white/10 box-border ${isLast ? 'rounded-r-md' : ''}`}
+                                    className="h-full relative group flex items-center justify-center border-r border-black/20 border-l border-white/20 box-border transition-all hover:brightness-110"
                                 >
                                     {/* Etiqueta de Medida */}
                                     <span 
-                                        className={`font-black text-xs sm:text-base ${textColorClass} drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)] truncate px-0.5 transform scale-y-110 pointer-events-none select-none`}
-                                        style={{ textShadow: '0px 1px 3px rgba(0,0,0,0.8)' }}
+                                        className={`font-black text-sm sm:text-lg ${textColorClass} drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)] truncate px-0.5 transform scale-y-110 pointer-events-none select-none`}
+                                        style={{ textShadow: '0px 2px 4px rgba(0,0,0,0.5)' }}
                                     >
                                         {isTiny ? '' : seg.width}
                                     </span>
                                     
                                     {/* Etiqueta flotante para cortes pequeños */}
                                     {isTiny && (
-                                        <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 text-white text-[9px] px-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none">
+                                        <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-gray-900 text-white text-[10px] px-2 py-1 rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50 pointer-events-none font-bold border border-gray-700">
                                             {seg.width}mm
                                         </div>
                                     )}
@@ -193,9 +193,9 @@ const JumboVisualizer: React.FC<{
                                     width: `${(remainingWidth / jumboWidth) * 100}%`,
                                     backgroundImage: remnantGradient
                                 }}
-                                className="h-full relative flex items-center justify-center border-l-2 border-black/50 shadow-inner rounded-r-md"
+                                className="h-full relative flex items-center justify-center border-l-2 border-black/50 shadow-inner"
                             >
-                                <span className="text-[10px] sm:text-xs font-bold text-gray-500 uppercase tracking-[0.2em] rotate-90 sm:rotate-0 whitespace-nowrap opacity-60">
+                                <span className="text-[10px] sm:text-xs font-bold text-gray-300 uppercase tracking-[0.2em] rotate-90 sm:rotate-0 whitespace-nowrap opacity-80 drop-shadow-md">
                                     Libre
                                 </span>
                             </div>
@@ -203,25 +203,25 @@ const JumboVisualizer: React.FC<{
                         
                         {/* Overflow (Si hay exceso) */}
                         {isOverflow && (
-                             <div className="flex-1 h-full bg-red-900/50 flex items-center justify-center border-l-2 border-red-500 relative overflow-visible rounded-r-md">
-                                 <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,#ff0000_10px,#ff0000_20px)] opacity-20 rounded-r-md"></div>
+                             <div className="flex-1 h-full bg-red-900/50 flex items-center justify-center border-l-2 border-red-500 relative overflow-visible">
+                                 <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,#ff0000_10px,#ff0000_20px)] opacity-20"></div>
                                  <span className="text-white font-bold text-xs bg-red-600 px-2 py-1 rounded shadow z-10">EXCESO</span>
                              </div>
                         )}
                     </div>
 
                     {/* Tapa Derecha (Sombra final suavizada) */}
-                    <div className="absolute right-0 top-0 bottom-0 w-4 z-40 bg-gradient-to-l from-black/80 to-transparent pointer-events-none rounded-r-md"></div>
+                    <div className="absolute right-0 top-0 bottom-0 w-6 z-40 bg-gradient-to-l from-black/60 to-transparent pointer-events-none rounded-r-lg"></div>
                 </div>
                 
                 {/* Sombra de piso */}
-                <div className="mt-1 mx-4 h-2 bg-black/30 rounded-[100%] blur-sm"></div>
+                <div className="mt-2 mx-6 h-4 bg-black/40 rounded-[100%] blur-md"></div>
             </div>
         </div>
     );
 };
 
-// --- BUSCADOR PREDICTIVO DE ITEMS INDIVIDUALES (NUEVO) ---
+// ... (Rest of helper components are same as before) ...
 const StockItemAutocomplete: React.FC<{
     inventory: InventoryItem[];
     onSelect: (item: InventoryItem) => void;
@@ -230,11 +230,9 @@ const StockItemAutocomplete: React.FC<{
     const [isOpen, setIsOpen] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
 
-    // Filtrar inventario basado en búsqueda
     const filteredItems = useMemo(() => {
         if (!search || search.length < 2) return [];
         const lower = search.toLowerCase();
-        // LIMITAMOS A 20 RESULTADOS PARA EVITAR CUELGUES DE UI
         return inventory.filter(i => 
             i.codigo.toLowerCase().includes(lower) || 
             i.nombre.toLowerCase().includes(lower) ||
@@ -279,26 +277,17 @@ const StockItemAutocomplete: React.FC<{
                 <div className="absolute z-50 top-full left-0 right-0 mt-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl max-h-80 overflow-y-auto">
                     {filteredItems.length > 0 ? (
                         filteredItems.map(item => (
-                            <div
-                                key={item.id}
-                                onClick={() => handleSelect(item)}
-                                className="p-3 hover:bg-orange-50 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 flex justify-between items-center group"
-                            >
+                            <div key={item.id} onClick={() => handleSelect(item)} className="p-3 hover:bg-orange-50 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 flex justify-between items-center group">
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <span className="font-mono text-xs font-bold bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 px-1.5 py-0.5 rounded">{item.codigo}</span>
                                         <span className="font-medium text-gray-900 dark:text-white">{item.nombre}</span>
                                     </div>
-                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                        {item.tipo} {item.ancho > 0 ? `| ${item.ancho}mm` : ''}
-                                    </div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{item.tipo} {item.ancho > 0 ? `| ${item.ancho}mm` : ''}</div>
                                 </div>
                                 <div className="text-right">
                                     <span className="block font-bold text-gray-700 dark:text-gray-300">{item.stockMetros.toLocaleString()}</span>
                                     <span className="text-[10px] text-gray-400 uppercase">Stock Físico</span>
-                                </div>
-                                <div className="hidden group-hover:block absolute right-2 bg-orange-600 text-white rounded-full p-1 shadow-lg">
-                                    <PlusIcon className="h-4 w-4" />
                                 </div>
                             </div>
                         ))
@@ -311,47 +300,35 @@ const StockItemAutocomplete: React.FC<{
     );
 };
 
-// --- SELECTOR MATERIAL POR FAMILIA ---
 const StockMaterialFamilySelect: React.FC<{ 
-    value: string; // Codigo de familia (ej: 014)
-    onChange: (code: string, name: string) => void; 
-    inventory: InventoryItem[];
-    onConfirmSelection?: () => void; // Callback para enfocar siguiente campo
+    value: string; onChange: (code: string, name: string) => void; inventory: InventoryItem[]; onConfirmSelection?: () => void; 
 }> = ({ value, onChange, inventory, onConfirmSelection }) => {
     const [search, setSearch] = useState('');
     const [isOpen, setIsOpen] = useState(false);
-    const [activeIndex, setActiveIndex] = useState(0); // Para navegación con teclado
+    const [activeIndex, setActiveIndex] = useState(0); 
     const wrapperRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    // Agrupar inventario por FAMILIA (primeros 3 digitos)
     const families = useMemo(() => {
         const uniqueFamilies = new Map<string, string>();
-        inventory
-            .filter(i => i.tipo === 'Sustrato')
-            .forEach(item => {
-                const code = item.codigo.substring(0, 3);
-                // Usamos el nombre del primer item encontrado como referencia de la familia, limpiando medidas si es posible
-                if (!uniqueFamilies.has(code)) {
-                    // Intento simple de limpiar nombre: quitar numeros al final o dimensiones
-                    const cleanName = item.nombre.split('(')[0].replace(/[0-9]+x[0-9]+.*/, '').trim();
-                    uniqueFamilies.set(code, cleanName);
-                }
-            });
+        // MODIFICADO: Permite Sustrato, Laminado, Ribbon, etc. para la lógica de Jumbo Universal
+        const validTypes = ['Sustrato', 'Laminado', 'Ribbon', 'Hot Stamping', 'Cold Stamping'];
         
-        return Array.from(uniqueFamilies.entries())
-            .map(([code, name]) => ({ code, name }))
-            .sort((a, b) => a.code.localeCompare(b.code));
+        inventory.filter(i => validTypes.includes(i.tipo)).forEach(item => {
+            const code = item.codigo.substring(0, 3);
+            if (!uniqueFamilies.has(code)) {
+                // Limpiar nombre para la familia
+                const cleanName = item.nombre.split('(')[0].replace(/[0-9]+x[0-9]+.*/, '').trim();
+                uniqueFamilies.set(code, cleanName);
+            }
+        });
+        return Array.from(uniqueFamilies.entries()).map(([code, name]) => ({ code, name })).sort((a, b) => a.code.localeCompare(b.code));
     }, [inventory]);
     
-    // Al seleccionar, actualizamos search
     useEffect(() => {
         const found = families.find(f => f.code === value);
-        if (found) {
-            setSearch(`${found.code} - ${found.name}`);
-        } else if (!value && value !== 'S/C') { // 'S/C' es el código para "Sin Código" (texto libre)
-            setSearch('');
-        }
+        if (found) setSearch(`${found.code} - ${found.name}`);
+        else if (!value && value !== 'S/C') setSearch('');
     }, [value, families]);
 
     useEffect(() => {
@@ -362,94 +339,34 @@ const StockMaterialFamilySelect: React.FC<{
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const filtered = useMemo(() => {
-        return families.filter(f => 
-            f.name.toLowerCase().includes(search.toLowerCase()) || 
-            f.code.includes(search)
-        );
-    }, [families, search]);
+    const filtered = useMemo(() => families.filter(f => f.name.toLowerCase().includes(search.toLowerCase()) || f.code.includes(search)), [families, search]);
+    useEffect(() => { setActiveIndex(0); }, [search]);
 
-    // Resetear índice activo cuando cambia la búsqueda
-    useEffect(() => {
-        setActiveIndex(0);
-    }, [search]);
-
-    // MANEJO DE TECLADO
     const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (!isOpen) {
-            if (e.key === 'ArrowDown') setIsOpen(true);
-            return;
-        }
-
-        if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setActiveIndex(prev => (prev < filtered.length - 1 ? prev + 1 : prev));
-        } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setActiveIndex(prev => (prev > 0 ? prev - 1 : prev));
-        } else if (e.key === 'Enter') {
-            e.preventDefault();
-            if (filtered.length > 0) {
-                const selected = filtered[activeIndex];
-                onChange(selected.code, selected.name);
-                setIsOpen(false);
-                if (onConfirmSelection) onConfirmSelection();
-            } else if (search.trim()) {
-                // LOGICA AÑADIDA: Permitir texto libre si no hay coincidencias
-                onChange('S/C', search.trim());
-                setIsOpen(false);
-                if (onConfirmSelection) onConfirmSelection();
-            }
-        } else if (e.key === 'Escape') {
-            setIsOpen(false);
-        }
+        if (!isOpen) { if (e.key === 'ArrowDown') setIsOpen(true); return; }
+        if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIndex(prev => (prev < filtered.length - 1 ? prev + 1 : prev)); } 
+        else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIndex(prev => (prev > 0 ? prev - 1 : prev)); } 
+        else if (e.key === 'Enter') { e.preventDefault(); if (filtered.length > 0) { const selected = filtered[activeIndex]; onChange(selected.code, selected.name); setIsOpen(false); if (onConfirmSelection) onConfirmSelection(); } else if (search.trim()) { onChange('S/C', search.trim()); setIsOpen(false); if (onConfirmSelection) onConfirmSelection(); } } 
+        else if (e.key === 'Escape') { setIsOpen(false); }
     };
 
     return (
         <div ref={wrapperRef} className="relative w-full">
             <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Material (Familia)</label>
             <div className="relative">
-                <input 
-                    ref={inputRef}
-                    type="text"
-                    value={search}
-                    onChange={(e) => { setSearch(e.target.value); setIsOpen(true); onChange('', ''); }}
-                    onFocus={() => setIsOpen(true)}
-                    onKeyDown={handleKeyDown}
-                    placeholder="Ej: 260 - BOPP o Escribe nombre nuevo..."
-                    className="w-full p-2 pl-9 border rounded-md dark:bg-gray-700 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-orange-500 font-bold"
-                />
+                <input ref={inputRef} type="text" value={search} onChange={(e) => { setSearch(e.target.value); setIsOpen(true); onChange('', ''); }} onFocus={() => setIsOpen(true)} onKeyDown={handleKeyDown} placeholder="Ej: 260 - BOPP o Escribe nombre nuevo..." className="w-full p-2 pl-9 border rounded-md dark:bg-gray-700 dark:text-white dark:border-gray-600 focus:ring-2 focus:ring-orange-500 font-bold" />
                 <SearchIcon className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-                {value && (
-                    <button onClick={() => {onChange('', ''); setSearch(''); inputRef.current?.focus();}} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500">
-                        <XIcon className="h-4 w-4" />
-                    </button>
-                )}
+                {value && <button onClick={() => {onChange('', ''); setSearch(''); inputRef.current?.focus();}} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500"><XIcon className="h-4 w-4" /></button>}
             </div>
             {isOpen && (
                 <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-md shadow-lg max-h-60 overflow-y-auto">
                     {filtered.map((f, idx) => (
-                        <div 
-                            key={f.code}
-                            onClick={() => { onChange(f.code, f.name); setIsOpen(false); if (onConfirmSelection) onConfirmSelection(); }}
-                            className={`px-4 py-2 cursor-pointer flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 text-sm ${idx === activeIndex ? 'bg-orange-100 dark:bg-orange-900/40' : 'hover:bg-orange-50 dark:hover:bg-gray-700'}`}
-                        >
+                        <div key={f.code} onClick={() => { onChange(f.code, f.name); setIsOpen(false); if (onConfirmSelection) onConfirmSelection(); }} className={`px-4 py-2 cursor-pointer flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 text-sm ${idx === activeIndex ? 'bg-orange-100 dark:bg-orange-900/40' : 'hover:bg-orange-50 dark:hover:bg-gray-700'}`}>
                             <span className="font-mono font-bold bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 px-2 rounded text-xs">{f.code}</span>
                             <span className="dark:text-white truncate">{f.name}</span>
                         </div>
                     ))}
-                    
-                    {/* OPCIÓN DE AGREGAR MANUALMENTE SI NO HAY RESULTADOS EXACTOS */}
-                    {filtered.length === 0 && search.trim().length > 0 && (
-                        <div 
-                            onClick={() => { onChange('S/C', search.trim()); setIsOpen(false); if(onConfirmSelection) onConfirmSelection(); }}
-                            className="p-3 text-center text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 font-bold border-t border-gray-100 dark:border-gray-700"
-                        >
-                            + Usar "{search}" (Material Nuevo)
-                        </div>
-                    )}
-                    
-                    {filtered.length === 0 && search.trim().length === 0 && <div className="p-3 text-center text-gray-500 text-sm">No encontrado</div>}
+                    {filtered.length === 0 && search.trim().length > 0 && <div onClick={() => { onChange('S/C', search.trim()); setIsOpen(false); if(onConfirmSelection) onConfirmSelection(); }} className="p-3 text-center text-blue-600 dark:text-blue-400 text-sm cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-900/20 font-bold border-t border-gray-100 dark:border-gray-700">+ Usar "{search}" (Material Nuevo)</div>}
                 </div>
             )}
         </div>
@@ -485,10 +402,10 @@ const RR_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 445.41
 
 
 const StockDashboard: React.FC = () => {
-    const { inventory, updateInventoryItem } = useSystemData();
+    const { inventory, updateInventoryItem, jumboPresets, importInventory } = useSystemData();
     const { user, quotes } = useOutletContext<QuoteOutletContext>();
     
-    const { inventoryStatus } = useInventory(quotes);
+    const { inventoryStatus, calculateLinearMeters } = useInventory(quotes);
 
     const [categoryFilter, setCategoryFilter] = useState<'Sustrato' | 'Laminado' | 'Ribbon' | 'Hot Stamping' | 'Cold Stamping' | 'Tinta' | 'Otro'>('Sustrato');
     const [subCategoryFilter, setSubCategoryFilter] = useState<string>('');
@@ -503,11 +420,11 @@ const StockDashboard: React.FC = () => {
     const [showHelpGuide, setShowHelpGuide] = useState(false); // Nuevo estado para la guía
     
     // --- ESTADOS PARA SELECCIÓN DE REPORTE Y OC GENERAL ---
-    const [selectedReportItems, setSelectedReportItems] = useState<{item: InventoryItem, orderQty: number}[]>([]);
+    const [selectedReportItems, setSelectedReportItems] = useState<{item: InventoryItem, orderQty: number, orderUnit: string}[]>([]);
     
     // --- ESTADOS JUMBO SLITTER ---
     const [nextOCNumber, setNextOCNumber] = useState('');
-    const [currentJumbo, setCurrentJumbo] = useState<{width: number, materialId: string, materialName: string, materialCode: string, runs?: number}>({ width: 1500, materialId: '', materialName: '', materialCode: '', runs: 1 });
+    const [currentJumbo, setCurrentJumbo] = useState<{width: number, length: number, materialId: string, materialName: string, materialCode: string, runs?: number}>({ width: 1500, length: 2000, materialId: '', materialName: '', materialCode: '', runs: 1 });
     const [currentCuts, setCurrentCuts] = useState<CutDefinition[]>([]);
     const [inputCutWidth, setInputCutWidth] = useState<string>('');
     const [inputCutQty, setInputCutQty] = useState<string>(''); // Quantity per JUMBO
@@ -518,8 +435,24 @@ const StockDashboard: React.FC = () => {
     const [supplierList, setSupplierList] = useState<string[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     
-    // --- NUEVO ESTADO PARA CÁLCULO INVERSO ---
+    // --- NUEVO: CALCULADORA DE REPOSICIÓN INTELIGENTE (EN MODAL ITEM) ---
+    const [purchaseGoalM2, setPurchaseGoalM2] = useState<string>(''); // AHORA EN M2
+    const [smartCutWidth, setSmartCutWidth] = useState<string>(''); // ESTADO PRESERVADO AUNQUE NO SE USE EN UI DIRECTAMENTE AHORA
+    const [smartPendingM2, setSmartPendingM2] = useState<number>(0); // Dato Estadístico "En Cotización"
+    const [smartProductionM2, setSmartProductionM2] = useState<number>(0); // Dato Estadístico "Aprobado / OP"
+    
+    // --- ESTADO PARA MODAL DE "SOLICITUD RÁPIDA (MOCK)" ---
+    const [showQuickRequestModal, setShowQuickRequestModal] = useState(false);
+    const [quickRequestItem, setQuickRequestItem] = useState<InventoryItem | null>(null);
+    const [mockConsumption, setMockConsumption] = useState<{ monthly: number, lastPurchase: string, suggestedM2: number } | null>(null);
+
+    // --- NUEVO ESTADO PARA CÁLCULO INVERSO (SLITTER) ---
     const [targetTotalBobinas, setTargetTotalBobinas] = useState<string>('');
+
+    // --- NUEVO: MODAL PARA CÁLCULO DE M2 DESDE EL CHIP ---
+    const [showM2Modal, setShowM2Modal] = useState(false);
+    const [targetCutItem, setTargetCutItem] = useState<InventoryItem | null>(null);
+    const [targetM2Request, setTargetM2Request] = useState<string>('');
 
     // REFS PARA NAVEGACIÓN TECLADO
     const widthInputRef = useRef<HTMLInputElement>(null);
@@ -527,12 +460,23 @@ const StockDashboard: React.FC = () => {
 
     const canEdit = user.role === UserRole.Admin || user.role === UserRole.Cotizador || user.role === UserRole.Gerencia || user.role === UserRole.Director;
 
+    // Persistencia de Pending Jumbos en LocalStorage para no perder trabajo
     useEffect(() => {
+        const storedJumbos = safeStorage.getItem('rr_pending_oc_jumbos');
+        if (storedJumbos) {
+            try { setPendingJumbos(JSON.parse(storedJumbos)); } catch {}
+        }
+        
         const storedHistory = safeStorage.getItem('rr_oc_history');
         if (storedHistory) { try { setOcHistory(JSON.parse(storedHistory)); } catch {} }
         const storedSuppliers = safeStorage.getItem('rr_suppliers');
         if (storedSuppliers) { try { setSupplierList(JSON.parse(storedSuppliers)); } catch {} }
     }, []);
+
+    // Guardar cambios en Pending Jumbos
+    useEffect(() => {
+        safeStorage.setItem('rr_pending_oc_jumbos', JSON.stringify(pendingJumbos));
+    }, [pendingJumbos]);
 
     useEffect(() => {
         if (showReportModal && (reportType === 'purchase')) {
@@ -548,12 +492,62 @@ const StockDashboard: React.FC = () => {
         return currentCuts.reduce((acc, c) => acc + c.quantity, 0);
     }, [currentCuts]);
 
+    // Calcular Área m2 (Jumbo Width(mm)/1000 * Jumbo Length(m) * Runs)
+    const totalAreaM2 = useMemo(() => {
+        const widthM = currentJumbo.width / 1000;
+        const lengthM = currentJumbo.length || 0;
+        const runs = currentJumbo.runs || 1;
+        return widthM * lengthM * runs;
+    }, [currentJumbo]);
+
+    // CALCULAR ESTADÍSTICAS DE CONSUMO (M2 EN COTIZACIONES ACTIVAS Y APROBADAS)
+    useEffect(() => {
+        const item = quickRequestItem || editItem;
+        if (!item) { 
+            setSmartPendingM2(0); 
+            setSmartProductionM2(0);
+            return; 
+        }
+
+        let totalPendingLinear = 0;
+        let totalProductionLinear = 0;
+
+        quotes.forEach(quote => {
+            const isPending = quote.estado === QuoteStatus.Cotizado;
+            const isProduction = quote.estado === QuoteStatus.Aprobado;
+
+            if (isPending || isProduction) {
+                quote.items.forEach(qItem => {
+                    // Verificamos si este item usa el material seleccionado
+                    if (qItem.selectedMaterialId === item.id) {
+                        const qty = qItem.quantities.length > 0 ? Math.max(...qItem.quantities.map(q => Number(q.cantidad))) : 0;
+                        const tracks = Number(qItem.produccionCarreras) || Number(qItem.troquelCarreras) || 1;
+                        
+                        // Calculamos consumo lineal
+                        const linear = calculateLinearMeters(Number(qItem.largo), qty, tracks);
+                        
+                        if (isPending) totalPendingLinear += linear;
+                        if (isProduction) totalProductionLinear += linear;
+                    }
+                });
+            }
+        });
+        
+        // Convertir a M2: Total Lineal * (Ancho Item / 1000)
+        const widthFactor = item.ancho / 1000;
+        setSmartPendingM2(Math.round(totalPendingLinear * widthFactor));
+        setSmartProductionM2(Math.round(totalProductionLinear * widthFactor));
+
+    }, [editItem, quickRequestItem, quotes, calculateLinearMeters]);
+
+
     // MANEJAR CAMBIO EN TOTAL BOBINAS (Cálculo Inverso)
     const handleTargetTotalChange = (val: string) => {
         setTargetTotalBobinas(val);
         const target = parseInt(val);
         
         if (!isNaN(target) && target > 0 && totalCutsPerJumbo > 0) {
+            // Calcular bajadas necesarias (redondeando hacia arriba siempre)
             const neededRuns = Math.ceil(target / totalCutsPerJumbo);
             setCurrentJumbo(prev => ({ ...prev, runs: neededRuns }));
         }
@@ -622,6 +616,120 @@ const StockDashboard: React.FC = () => {
     const handleEditClick = (item: InventoryItem) => { setEditItem({ ...item }); setShowEditModal(true); };
     const handleSaveItem = async () => { if (editItem) { await updateInventoryItem(editItem); setShowEditModal(false); setEditItem(null); } };
 
+    // --- HANDLER PARA CLIC EN MEDIDA ESPECÍFICA (ABRIR MODAL M2) ---
+    const handleWidthClick = (item: InventoryItem, e: React.MouseEvent) => {
+        e.stopPropagation(); // Evitar abrir modal de edición estándar
+        setTargetCutItem(item);
+        setTargetM2Request('');
+        setShowM2Modal(true);
+    };
+
+    // --- LÓGICA DE CÁLCULO DESDE MODAL M2 ---
+    const handleCalculateAndOpen = () => {
+        if (!targetCutItem) return;
+        const requestedM2 = parseFloat(targetM2Request);
+        if (!requestedM2 || requestedM2 <= 0) return alert("Ingrese una cantidad válida.");
+
+        // 1. Obtener Ancho Jumbo Predeterminado (Preset o Default)
+        const familyCode = targetCutItem.codigo.substring(0, 3);
+        const preset = jumboPresets.find(p => p.materialCode === familyCode);
+        const jumboWidth = preset ? preset.defaultWidth : 1500; // Default 1500 si no hay preset
+        const jumboLength = preset ? preset.defaultLength : 2000;
+
+        const targetCutWidth = targetCutItem.ancho;
+        
+        // 2. Calcular Esquema de Corte (Cortes por Jumbo)
+        const cutsPerJumbo = Math.floor(jumboWidth / targetCutWidth);
+        const remainder = jumboWidth - (cutsPerJumbo * targetCutWidth);
+
+        const cuts: CutDefinition[] = [{
+            id: `cut-${Date.now()}`,
+            width: targetCutWidth,
+            quantity: cutsPerJumbo
+        }];
+
+        // 3. Regla de los 10mm (Remanente)
+        if (remainder > 10) {
+            cuts.push({
+                id: `remnant-${Date.now()}`,
+                width: remainder,
+                quantity: 1
+            });
+        }
+
+        // 4. Calcular Cantidad de Bajadas (Runs) necesarias para cubrir M2
+        // Área producida por bobinas ÚTILES (del corte solicitado) en 1 bajada
+        // Area = (AnchoCorte/1000) * LargoJumbo * CantidadCortes
+        const usefulAreaPerRun = (targetCutWidth / 1000) * jumboLength * cutsPerJumbo;
+        
+        // Si el área útil es 0 (ej: corte más ancho que jumbo), evitar división por cero
+        const neededRuns = usefulAreaPerRun > 0 ? Math.ceil(requestedM2 / usefulAreaPerRun) : 1;
+
+        // 5. Configurar Estado del Generador OC
+        setCurrentJumbo({
+            width: jumboWidth,
+            length: jumboLength,
+            materialId: familyCode,
+            materialName: targetCutItem.nombre,
+            materialCode: familyCode,
+            runs: neededRuns
+        });
+        setCurrentCuts(cuts);
+        
+        // 6. Cerrar modal y Navegar a Purchase
+        setShowM2Modal(false);
+        setReportType('purchase');
+        setShowReportModal(true);
+    };
+
+    // --- HANDLER PARA CLIC EN ICONO "SMART REQUEST" (HISTORIAL) ---
+    const handleSmartOrderClick = (item: InventoryItem, e: React.MouseEvent) => {
+        // e.stopPropagation(); 
+        // setQuickRequestItem(item);
+        // setPurchaseGoalM2(''); 
+        // setSmartCutWidth(''); 
+        // setShowQuickRequestModal(true);
+    };
+
+    const handleForceSync = async () => {
+        if (!confirm("Esto recargará el inventario desde Google Sheets. ¿Continuar?")) return;
+        
+        try {
+            const fetchCSV = async (url: string) => {
+                if(!url) return null;
+                try {
+                    const res = await fetch(url);
+                    if(res.ok) return await res.text();
+                } catch (e) {
+                    console.warn(`Failed to fetch ${url}`, e);
+                }
+                return null;
+            };
+
+            const promises = [
+                fetchCSV(GOOGLE_SHEET_BOBINAS_URL),
+                fetchCSV(GOOGLE_SHEET_RIBBONS_URL),
+                fetchCSV(GOOGLE_SHEET_LAMINADOS_URL),
+                fetchCSV(GOOGLE_SHEET_HOT_FOIL_URL),
+                fetchCSV(GOOGLE_SHEET_COLD_FOIL_URL)
+            ];
+
+            const [bobinas, ribbons, laminados, hot, cold] = await Promise.all(promises);
+
+            let count = 0;
+            if (bobinas) count += await importInventory(bobinas, 'Sustrato');
+            if (ribbons) count += await importInventory(ribbons, 'Ribbon');
+            if (laminados) count += await importInventory(laminados, 'Laminado');
+            if (hot) count += await importInventory(hot, 'Hot Stamping');
+            if (cold) count += await importInventory(cold, 'Cold Stamping');
+            
+            alert(`Sincronización completada. ${count} ítems actualizados.`);
+        } catch (err) {
+            console.error("Error syncing data:", err);
+            alert("Error al sincronizar datos.");
+        }
+    };
+
     const FilterButton = ({ active, onClick, label, className }: any) => (
         <button onClick={onClick} className={`px-4 py-1.5 rounded-full text-sm font-bold transition-all shadow-sm border ${active ? 'bg-gray-800 text-white border-gray-900 transform scale-105' : 'bg-white text-gray-600 hover:bg-gray-100 border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600'} ${className}`}>{label}</button>
     );
@@ -654,6 +762,11 @@ const StockDashboard: React.FC = () => {
         setCurrentCuts(prevCuts => prevCuts.filter(c => c.id !== id));
     };
 
+    // Función para actualizar un corte existente (EDICIÓN EN VIVO)
+    const updateCut = (id: string, field: keyof CutDefinition, value: number) => {
+        setCurrentCuts(prevCuts => prevCuts.map(c => c.id === id ? { ...c, [field]: value } : c));
+    };
+
     const undoLastCut = () => {
         setCurrentCuts(prev => {
             const newCuts = [...prev];
@@ -676,6 +789,7 @@ const StockDashboard: React.FC = () => {
             materialName: currentJumbo.materialName,
             materialCode: currentJumbo.materialCode,
             jumboWidth: currentJumbo.width,
+            jumboLength: currentJumbo.length, // Nuevo: Guardar largo
             cuts: currentCuts,
             totalQuantity: totalBobinas, // Cantidad TOTAL de salida
             runs: currentJumbo.runs // Guardamos las bajadas
@@ -697,6 +811,7 @@ const StockDashboard: React.FC = () => {
         if (!jumboToEdit) return;
         setCurrentJumbo({
             width: jumboToEdit.jumboWidth,
+            length: jumboToEdit.jumboLength || 2000,
             materialId: jumboToEdit.materialId,
             materialName: jumboToEdit.materialName,
             materialCode: jumboToEdit.materialCode,
@@ -706,22 +821,101 @@ const StockDashboard: React.FC = () => {
         setEditingId(jumboId);
     };
     
+    // --- LÓGICA DE REPOSICIÓN INTELIGENTE (SMART REFILL) ---
+    const handleSmartRefill = () => {
+        const item = quickRequestItem || editItem;
+        if (!item) return;
+        
+        // 1. Validar m2
+        const goalM2 = parseFloat(purchaseGoalM2);
+        if (!goalM2 || goalM2 <= 0) return alert("Ingrese una cantidad válida de metros cuadrados.");
+
+        // 2. Datos Jumbo
+        const familyCode = item.codigo.substring(0,3);
+        const preset = jumboPresets.find(p => p.materialCode === familyCode);
+        const jumboWidth = preset ? preset.defaultWidth : 1500;
+        const jumboLength = preset ? preset.defaultLength : 3000;
+
+        // 3. Calcular Cortes (Llenar Jumbo)
+        const itemWidth = item.ancho;
+        // Cantidad de cortes enteros que caben
+        const cutsCount = Math.floor(jumboWidth / itemWidth);
+        const remainder = jumboWidth - (cutsCount * itemWidth);
+
+        const cuts: CutDefinition[] = [{
+            id: `smart-cut-${Date.now()}`,
+            width: itemWidth,
+            quantity: cutsCount
+        }];
+
+        if (remainder > 10) {
+             cuts.push({
+                id: `smart-remnant-${Date.now()}`,
+                width: remainder,
+                quantity: 1
+            });
+        }
+
+        // 4. Calcular Bajadas (Runs)
+        // Area ÚTIL producida por bajada = (AnchoItem * CantidadCortes * LargoJumbo) / 1000
+        const usefulWidthMm = cutsCount * itemWidth;
+        const usefulAreaPerRun = (usefulWidthMm / 1000) * jumboLength;
+        
+        // Evitar división por cero si el ancho útil es 0 (ej: corte más grande que jumbo)
+        const neededRuns = usefulAreaPerRun > 0 ? Math.ceil(goalM2 / usefulAreaPerRun) : 1;
+
+        // 5. Set State
+        setCurrentJumbo({
+            width: jumboWidth,
+            length: jumboLength,
+            materialId: familyCode,
+            materialName: item.nombre,
+            materialCode: familyCode,
+            runs: neededRuns
+        });
+        setCurrentCuts(cuts);
+
+        // 6. Navigate
+        setShowQuickRequestModal(false);
+        setShowEditModal(false);
+        setReportType('purchase');
+        setShowReportModal(true);
+    };
+
     const cancelEditing = () => { setEditingId(null); setCurrentCuts([]); setCurrentJumbo(prev => ({...prev, runs: 1})); };
-    const removePendingJumbo = (id: string) => { if (editingId === id) cancelEditing(); setPendingJumbos(pendingJumbos.filter(j => j.id !== id)); };
+    const removePendingJumbo = (id: string) => { 
+        if (editingId === id) cancelEditing(); 
+        setPendingJumbos(prev => {
+            const newState = prev.filter(j => j.id !== id);
+            safeStorage.setItem('rr_pending_oc_jumbos', JSON.stringify(newState)); // Update Storage immediately
+            return newState;
+        });
+    };
 
     const loadOrderFromHistory = (order: PurchaseOrder) => {
         if (pendingJumbos.length > 0 && !confirm("Esto reemplazará la orden actual en curso. ¿Continuar?")) return;
         
         // MODIFICADO: Manejar carga de historial General o Slitter
         if (order.type === 'General' && order.generalItems) {
-            setSelectedReportItems(order.generalItems);
+            // Mapear items antiguos que no tenían orderUnit
+            const itemsWithUnits = order.generalItems.map(i => ({
+                ...i,
+                orderUnit: (i as any).orderUnit || 'Unidad'
+            }));
+            setSelectedReportItems(itemsWithUnits);
             setReportType('inventory'); // Cambiar a pestaña Inventario/General
         } else {
             setPendingJumbos(order.items);
             setReportType('purchase'); // Cambiar a pestaña Slitter
         }
         
-        setNextOCNumber(order.id);
+        // GENERAR NUEVO NUMERO DE OC (NO USAR EL VIEJO DEL HISTORIAL)
+        // Esto permite crear una NUEVA orden basada en la anterior
+        const year = new Date().getFullYear();
+        const lastSeq = parseInt(safeStorage.getItem('rr_last_oc_sequence') || '0');
+        const nextSeq = lastSeq + 1;
+        setNextOCNumber(`OC-${year}-${String(nextSeq).padStart(3, '0')}`);
+        
         setEditingId(null); 
         setCurrentCuts([]);
     };
@@ -729,7 +923,7 @@ const StockDashboard: React.FC = () => {
     // --- ACCIONES REPORTE DE STOCK (ADD/REMOVE) ---
     const addToReport = (item: InventoryItem) => {
         if (selectedReportItems.find(i => i.item.id === item.id)) return;
-        setSelectedReportItems(prev => [...prev, { item, orderQty: 0 }]);
+        setSelectedReportItems(prev => [...prev, { item, orderQty: 0, orderUnit: 'Unidad' }]);
     };
 
     const removeFromReport = (itemId: string) => {
@@ -738,6 +932,35 @@ const StockDashboard: React.FC = () => {
 
     const updateOrderQty = (itemId: string, qty: number) => {
         setSelectedReportItems(prev => prev.map(i => i.item.id === itemId ? { ...i, orderQty: qty } : i));
+    };
+
+    const updateOrderUnit = (itemId: string, unit: string) => {
+        // LÓGICA ESPECIAL PARA "Jumbo (Ir a Cortes)"
+        if (unit === 'Jumbo (Ir a Cortes)') {
+            const item = selectedReportItems.find(i => i.item.id === itemId)?.item;
+            if (item) {
+                // Pre-cargar datos en el editor de Jumbo
+                const familyCode = item.codigo.substring(0,3);
+                // Buscar preset si existe
+                const preset = jumboPresets.find(p => p.materialCode === familyCode);
+                
+                setCurrentJumbo(prev => ({
+                    ...prev,
+                    materialId: familyCode,
+                    materialCode: familyCode,
+                    materialName: item.nombre,
+                    width: preset ? preset.defaultWidth : 1500,
+                    length: preset ? preset.defaultLength : 2000,
+                    runs: 1
+                }));
+                
+                // Cambiar de pestaña
+                setReportType('purchase');
+            }
+            return;
+        }
+
+        setSelectedReportItems(prev => prev.map(i => i.item.id === itemId ? { ...i, orderUnit: unit } : i));
     };
 
     // --- GENERAR PDF REPORTE INVENTARIO ---
@@ -863,7 +1086,7 @@ const StockDashboard: React.FC = () => {
             const tableBody = itemsWithQty.map(i => [
                 i.item.codigo,
                 `${i.item.nombre} (${i.item.ancho}mm)`,
-                `${i.orderQty} unidades`
+                `${i.orderQty} ${i.orderUnit || 'Unidad'}` // MOSTRAR UNIDAD EN PDF
             ]);
 
             doc.autoTable({
@@ -972,132 +1195,180 @@ const StockDashboard: React.FC = () => {
             doc.text("Por medio de la presente, solicitamos el suministro de los siguientes productos detallados a continuación:", 20, y);
             y += 15;
 
-            pendingJumbos.forEach((jumbo, idx) => {
-                if (y > 230) { doc.addPage(); y = 20; }
+            // MAPA PARA CONSOLIDAR RESUMEN FINAL POR MATERIAL (SUMAR M2 Y REFERENCIAS)
+            const summaryMap = new Map<string, { totalM2: number, refs: number[] }>();
 
-                // HEADER GRIS CON BADGE DE COLOR
-                doc.setFillColor(245, 245, 245);
-                // Reducida altura de rectángulo para compactar (Antes 15 -> Ahora 12)
-                doc.rect(15, y, 180, 12, 'F');
-                doc.setFontSize(11);
-                doc.setTextColor(0);
-                doc.setFont("helvetica", "bold");
-                // Ajustado Y para centrar en rectángulo más chico
-                doc.text(`Ítem #${idx + 1}: ${jumbo.materialName}`, 20, y + 5);
-                
-                // --- COLOR BADGE (DENTRO DEL HEADER A LA DERECHA) ---
-                const badgeX = 185; 
-                const badgeY = y + 6;
+            pendingJumbos.forEach((jumbo, idx) => {
+                // FORCE PAGE BREAK IF NOT ENOUGH SPACE FOR ITEM (Header + Table)
+                if (y > 220) { doc.addPage(); y = 20; }
+
+                // --- OBTENER COLOR DEL MATERIAL ---
                 const matColorHex = getColorForMaterial(jumbo.materialCode, jumbo.materialName);
                 const matRgb = hexToRgb(matColorHex);
-                
-                doc.setFillColor(matRgb[0], matRgb[1], matRgb[2]);
-                doc.setDrawColor(50);
-                doc.circle(badgeX, badgeY, 4, 'FD'); 
-                
-                doc.setFontSize(7);
-                doc.setTextColor(shouldUseBlackText(jumbo.materialCode) ? 0 : 255);
-                // Ajustado para que esté perfectamente centrado usando baseline middle
-                doc.text(jumbo.materialCode, badgeX, badgeY, { align: 'center', baseline: 'middle' }); 
-                // ----------------------------------------------------
+                const isLightColor = shouldUseBlackText(jumbo.materialCode);
 
+                // HEADER CON COLOR DEL MATERIAL Y CÍRCULO
+                doc.setFillColor(matRgb[0], matRgb[1], matRgb[2]);
+                doc.rect(15, y, 180, 10, 'F');
+                
+                // CÍRCULO BLANCO CON CÓDIGO
+                const circleX = 22;
+                const circleY = y + 5;
+                doc.setFillColor(255, 255, 255);
+                doc.circle(circleX, circleY, 3.5, 'F'); // Radio 3.5
+                
+                doc.setFontSize(9);
+                doc.setFont("helvetica", "bold");
+                doc.setTextColor(matRgb[0], matRgb[1], matRgb[2]); // Texto del color del material
+                doc.text(jumbo.materialCode, circleX, circleY + 1, { align: 'center' }); // Centrado en círculo
+
+                // NOMBRE DEL MATERIAL AL LADO
+                doc.setFontSize(11);
+                doc.setTextColor(isLightColor ? 0 : 255);
+                // Ajustado X para dejar espacio al círculo
+                doc.text(`Ítem #${idx + 1}: ${jumbo.materialName}`, 30, y + 6.5);
+                
                 doc.setFont("helvetica", "normal");
                 doc.setFontSize(10);
                 doc.setTextColor(0);
                 
                 // Info Jumbo (Espaciado reducido: Antes y+11 -> y+9)
                 const runs = jumbo.runs || 1;
-                doc.text(`Ancho Jumbo: ${jumbo.jumboWidth}mm  |  Bajadas (Jumbos): ${runs}`, 20, y + 9);
+                // Calculo M2
+                const widthM = jumbo.jumboWidth / 1000;
+                const lengthM = jumbo.jumboLength || 2000;
+                const areaM2 = widthM * lengthM * runs;
+
+                doc.text(`Ancho: ${jumbo.jumboWidth}mm | Largo: ${lengthM}m | Bajadas: ${runs}`, 20, y + 15);
+
+                // AGREGAR AL MAPA DE RESUMEN CONSOLIDADO (CON REFERENCIAS)
+                const summaryKey = `${jumbo.materialCode} - ${jumbo.materialName}`;
+                const entry = summaryMap.get(summaryKey) || { totalM2: 0, refs: [] };
+                entry.totalM2 += areaM2;
+                entry.refs.push(idx + 1); // Guardar referencia de ítem (1-based)
+                summaryMap.set(summaryKey, entry);
 
                 // Espaciado antes de la tabla reducido (Antes 18 -> 14)
-                y += 14;
+                y += 20;
 
                 // Tabla de Schema y Totales
-                // Columnas: Ancho Corte | Cantidad por Jumbo (Carriles) | Total Bobinas (Carriles x Bajadas)
+                // Columnas: Ancho Corte | Cortes x Jumbo | Bobinas a Recibir | Total M2
                 const tableBody = jumbo.cuts.map(c => {
-                    const totalQty = c.quantity * runs;
+                    const totalCoils = c.quantity * runs;
+                    const m2 = (c.width / 1000) * lengthM * totalCoils;
                     return [
                         `${c.width} mm`,
                         `${c.quantity} carriles`,
-                        `${totalQty} bobinas`
+                        `${totalCoils} bobinas`,
+                        `${m2.toLocaleString()} m²`
                     ];
                 });
+                
+                // CALCULAR TOTALES PARA EL FOOTER DE LA TABLA
+                const totalBobinasJumbo = jumbo.cuts.reduce((acc, c) => acc + (c.quantity * runs), 0);
+                const totalM2Jumbo = jumbo.cuts.reduce((acc, c) => acc + ((c.width / 1000) * lengthM * (c.quantity * runs)), 0);
 
                 doc.autoTable({
                     startY: y,
-                    head: [['Medida Corte', 'Cortes por Jumbo', 'Total a Recibir']],
+                    head: [['Medida Corte', 'Cortes x Jumbo', 'Bobinas a Recibir', 'Metros Cuadrados']],
                     body: tableBody,
+                    foot: [['TOTALES', '', `${totalBobinasJumbo} bobinas`, `${Math.round(totalM2Jumbo).toLocaleString()} m²`]],
                     theme: 'grid',
                     headStyles: { fillColor: [234, 88, 12] },
+                    footStyles: { fillColor: [240, 240, 240], textColor: [0,0,0], fontStyle: 'bold' },
                     margin: { left: 20 },
-                    tableWidth: 170
+                    // Eliminado tableWidth fijo para usar full width disponible mejor
+                    styles: { fontSize: 9, halign: 'center' },
+                    columnStyles: {
+                        0: { halign: 'left' },
+                        3: { halign: 'right', fontStyle: 'bold' }
+                    }
                 });
+                
+                // REMOVED FLOATING TOTAL M2 TEXT (AS REQUESTED)
 
                 // Espaciado post-tabla reducido (Antes +10 -> +8)
-                y = (doc as any).lastAutoTable.finalY + 8;
+                y = (doc as any).lastAutoTable.finalY + 5;
                 
-                // ESQUEMA VISUAL EN PDF (SIMULACIÓN CILINDRO MEJORADA)
+                // ESQUEMA VISUAL EN PDF (CILINDRO MEJORADO CON TAPAS)
                 if (jumbo.cuts.length > 0) {
-                    if (y > 230) { doc.addPage(); y = 20; }
+                    // Check space for visual
+                    if (y > 240) { doc.addPage(); y = 20; }
+                    
                     doc.setFontSize(9);
                     doc.setTextColor(100);
-                    doc.text("Esquema de Corte (1 Jumbo):", 20, y);
+                    doc.text("Esquema de Corte (1 Jumbo):", 20, y + 5);
                     
-                    y += 8;
+                    y += 10;
 
                     const schemaWidth = 170;
-                    const cylinderHeight = 18;
+                    const cylinderHeight = 12; // Altura del cilindro
                     const usedWidth = jumbo.cuts.reduce((acc, c) => acc + (c.width * c.quantity), 0);
                     const scale = schemaWidth / jumbo.jumboWidth;
                     
-                    // --- PASO 1: DIBUJAR CAPAS DE FONDO (BACKGROUND LAYERS) ---
-                    // Dibujamos primero todos los rectángulos y formas sólidas.
-                    
-                    let currentX = 20;
-                    const ellipseWidth = 4;
                     const cylinderY = y + (cylinderHeight / 2);
+                    const ellipseWidth = 3; // Ancho visual de la elipse (perspectiva)
+
+                    let currentX = 20;
+
+                    // --- 1. DIBUJAR CUERPO (Rectángulos) ---
+                    // Dibujamos primero el cuerpo para que las tapas se superpongan a los bordes
+                    
+                    doc.setDrawColor(150); // Set border color once
 
                     jumbo.cuts.forEach(cut => {
                         for(let i=0; i<cut.quantity; i++) {
                             const w = cut.width * scale;
-                            // Color del material base
+                            // Cuerpo del segmento (Rectángulo)
                             doc.setFillColor(240, 240, 240); 
-                            doc.setDrawColor(150); 
-                            doc.rect(currentX, y, w, cylinderHeight, 'FD');
+                            doc.rect(currentX, y, w, cylinderHeight, 'FD'); // Fill and Draw border
                             currentX += w;
                         }
                     });
 
-                    // Dibujar Remanente (Fondo)
+                    // Remanente (Si existe)
                     const remanente = jumbo.jumboWidth - usedWidth;
+                    let capColor = [240, 240, 240]; // Default to body color
+
                     if (remanente > 0) {
-                        const remX = 20 + (usedWidth * scale);
                         const remW = schemaWidth - (usedWidth * scale);
-                        
-                        doc.setFillColor(220, 220, 220); // Gris remanente
-                        doc.rect(remX, y, remW, cylinderHeight, 'F');
-                        
-                        // Tapa Derecha sobre Remanente
-                        doc.setFillColor(220, 220, 220);
-                        doc.ellipse(remX + remW, cylinderY, ellipseWidth, cylinderHeight / 2, 'F');
-                    } else {
-                        // Tapa Derecha sobre último corte
-                        doc.setFillColor(240, 240, 240); 
-                        doc.ellipse(currentX, cylinderY, ellipseWidth, cylinderHeight / 2, 'F');
+                        capColor = [220, 220, 220]; // Remnant color
+                        doc.setFillColor(220, 220, 220); 
+                        doc.rect(currentX, y, remW, cylinderHeight, 'FD'); // Changed to FD for consistency
+                        currentX += remW;
                     }
 
-                    // Tapa Izquierda (Core) - Siempre visible al inicio
-                    doc.setFillColor(100, 100, 100); // Core exterior (Gris oscuro)
-                    doc.ellipse(20, cylinderY, ellipseWidth, cylinderHeight / 2, 'F');
+                    // --- 2. DIBUJAR TAPAS (Elipses) ---
                     
-                    // Agujero del Core
-                    doc.setFillColor(150, 150, 150); // Gris más claro
-                    doc.ellipse(20, cylinderY, ellipseWidth / 2, cylinderHeight / 4, 'F');
+                    // Tapa Izquierda (Core/Buje) - Color Oscuro - Dibujada SOBRE el inicio
+                    // Sin borde ('F') para que se vea limpio
+                    doc.setFillColor(80, 80, 80); 
+                    doc.ellipse(20, cylinderY, ellipseWidth, cylinderHeight / 2, 'F');
 
+                    // Tapa Derecha (Final del Rollo)
+                    // Debe ser del color del último segmento (gris claro o remanente)
+                    // Con borde a la derecha, sin borde a la izquierda (simulando continuidad)
+                    
+                    doc.setFillColor(capColor[0], capColor[1], capColor[2]);
+                    doc.setDrawColor(150);
+                    
+                    // 1. Dibujar elipse completa con borde
+                    doc.ellipse(currentX, cylinderY, ellipseWidth, cylinderHeight / 2, 'FD');
 
-                    // --- PASO 2: DIBUJAR TEXTOS (FOREGROUND LAYERS) ---
-                    // Ahora recorremos de nuevo para poner los números POR ENCIMA de todo lo dibujado.
-                    // Esto evita que la tapa derecha tape el último número.
+                    // 2. Parchear la mitad izquierda para borrar el borde y la línea del rectángulo
+                    // Rectángulo pequeño relleno del mismo color, sin borde
+                    // Coordenadas: desde el borde izquierdo de la elipse hasta el centro
+                    // Ajuste vertical para no tapar las líneas superior e inferior del cilindro
+                    const patchMargin = 0.3; // Margen para respetar bordes superior/inferior
+                    doc.rect(
+                        currentX - ellipseWidth, 
+                        y + patchMargin, 
+                        ellipseWidth + 0.5, // Cubre hasta un poco más del centro para tapar la línea vertical del rect
+                        cylinderHeight - (patchMargin * 2), 
+                        'F'
+                    );
+
+                    // --- 3. DIBUJAR TEXTOS ---
                     
                     currentX = 20; // Reset X
                     doc.setFont("helvetica", "bold");
@@ -1108,7 +1379,7 @@ const StockDashboard: React.FC = () => {
                         for(let i=0; i<cut.quantity; i++) {
                             const w = cut.width * scale;
                             if (w > 6) {
-                                doc.text(`${cut.width}`, currentX + (w/2), y + 11, { align: 'center' });
+                                doc.text(`${cut.width}`, currentX + (w/2), y + 8, { align: 'center' });
                             }
                             currentX += w;
                         }
@@ -1116,17 +1387,37 @@ const StockDashboard: React.FC = () => {
 
                     // Texto del Remanente
                     if (remanente > 0) {
-                        const remX = 20 + (usedWidth * scale);
                         const remW = schemaWidth - (usedWidth * scale);
                         if (remW > 15) {
                             doc.setTextColor(100);
-                            doc.text(`Libre: ${remanente}`, remX + (remW/2), y + 11, { align: 'center' });
+                            doc.text(`Libre: ${remanente}`, (currentX - remW) + (remW/2), y + 8, { align: 'center' });
                         }
                     }
 
                     // Espaciado post-esquema reducido (Antes +30 -> +25)
-                    y += 25;
+                    y += 18;
                 }
+            });
+
+            // --- FINAL SUMMARY SECTION (CONSOLIDADO CON REFERENCIAS) ---
+            if (y > 230) { doc.addPage(); y = 20; }
+            y += 10;
+            
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(11);
+            doc.setTextColor(0);
+            doc.text("RESUMEN DE MATERIALES:", 20, y);
+            y += 7;
+            
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(10);
+            
+            // Renderizar desde el Mapa Consolidado
+            summaryMap.forEach((entry, materialKey) => {
+                // Formatear referencias: "Ref: Ítem #1, #3"
+                const refText = entry.refs.length > 0 ? ` (Ref: Ítem ${entry.refs.map(r => `#${r}`).join(', ')})` : '';
+                doc.text(`${materialKey} - ${Math.round(entry.totalM2).toLocaleString()} m²${refText}`, 25, y);
+                y += 6;
             });
 
             y += 20;
@@ -1195,7 +1486,11 @@ const StockDashboard: React.FC = () => {
 
             setOcHistory(updatedHistory);
             safeStorage.setItem('rr_oc_history', JSON.stringify(updatedHistory));
+            
+            // CLEAR PENDING STATE AND LOCAL STORAGE
             setPendingJumbos([]);
+            safeStorage.removeItem('rr_pending_oc_jumbos');
+            
             setEditingId(null);
             setSupplierName(''); 
 
@@ -1227,6 +1522,10 @@ const StockDashboard: React.FC = () => {
                     <p className="text-gray-500 dark:text-gray-400 mt-1">Gestión visual de bobinas, alertas y consumos.</p>
                 </div>
                 <div className="flex gap-2">
+                    {/* Botón para intentar re-descargar inventario si falla */}
+                    <button onClick={handleForceSync} className="flex items-center gap-2 bg-blue-100 hover:bg-blue-200 text-blue-800 dark:bg-blue-900/40 dark:hover:bg-blue-900/60 dark:text-blue-300 px-3 py-2 rounded-lg font-bold transition-colors text-sm">
+                        <DownloadIcon className="h-4 w-4" /> Sincronizar Inventario
+                    </button>
                     <button onClick={() => setShowReportModal(true)} className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white px-5 py-3 rounded-lg font-bold transition-colors shadow-lg transform hover:scale-105">
                         <ClipboardCheckIcon className="h-5 w-5" /> Gestión de Informes y Compras
                     </button>
@@ -1237,7 +1536,8 @@ const StockDashboard: React.FC = () => {
             <div className="flex gap-2 overflow-x-auto pb-2 mb-2 border-b border-gray-200 dark:border-gray-700 scrollbar-hide">
                 {['Sustrato', 'Laminado', 'Ribbon', 'Tinta', 'Hot Stamping', 'Cold Stamping', 'Otro'].map(tab => (
                     <button key={tab} onClick={() => { setCategoryFilter(tab as any); setSearchTerm(''); setSubCategoryFilter(''); }} className={`px-6 py-2 rounded-t-lg font-bold text-sm whitespace-nowrap transition-all ${categoryFilter === tab ? 'bg-orange-600 text-white shadow-md' : 'bg-transparent text-gray-500 hover:text-orange-500 dark:text-gray-400'}`}>
-                        {tab === 'Sustrato' ? 'Bobinas Papel/Film' : tab === 'Tinta' ? 'Tintas' : tab === 'Otro' ? 'Otros Insumos' : tab}
+                        {/* CAMBIO DE NOMBRE PESTAÑA: DE BOBINAS A SOPORTE */}
+                        {tab === 'Sustrato' ? 'Soporte' : tab === 'Tinta' ? 'Tintas' : tab === 'Otro' ? 'Otros Insumos' : tab}
                     </button>
                 ))}
             </div>
@@ -1272,18 +1572,73 @@ const StockDashboard: React.FC = () => {
 
                     return (
                         <div key={key} className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col md:flex-row hover:shadow-md transition-shadow">
-                            <div style={headerStyle} className={`p-3 md:w-1/4 lg:w-1/5 flex flex-col justify-center relative overflow-hidden ${isTextBlack ? 'text-gray-900' : 'text-white'}`}>
-                                <div className="absolute top-0 right-0 p-2 opacity-20"><CubeIcon className="h-12 w-12 transform rotate-12" /></div>
-                                <div className="relative z-10"><h3 className="text-2xl font-extrabold drop-shadow-sm">{firstItem.codigo.substring(0, 3)}</h3><p className="text-xs font-bold opacity-90 uppercase tracking-wide truncate" title={firstItem.nombre}>{firstItem.nombre.split(' ').slice(0, 4).join(' ')}</p></div>
+                            <div 
+                                style={headerStyle} 
+                                className={`p-3 md:w-1/4 lg:w-1/5 flex flex-col justify-center relative overflow-hidden ${isTextBlack ? 'text-gray-900' : 'text-white'}`}
+                            >
+                                <div className="relative z-10 flex justify-between items-start">
+                                    <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            {/* CÍRCULO CON CÓDIGO (Restaurado) */}
+                                            <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center border-2 border-white/30 shadow-sm">
+                                                <span className="text-sm font-black">{firstItem.codigo.substring(0, 3)}</span>
+                                            </div>
+                                            <h3 className="text-xl font-extrabold drop-shadow-sm truncate">{firstItem.nombre.split(' ')[0]}</h3>
+                                        </div>
+                                        <p className="text-xs font-bold opacity-90 uppercase tracking-wide truncate" title={firstItem.nombre}>{firstItem.nombre}</p>
+                                    </div>
+                                </div>
                             </div>
                             <div className="p-3 flex-1 flex flex-col justify-center gap-2">
                                 {items.sort((a,b) => b.ancho - a.ancho).map(item => {
                                     const min = item.minStock || 0; const current = item.stockMetros; const isLow = min > 0 && current <= min; const maxVisual = Math.max(10000, current * 1.2); const percent = Math.min(100, (current / maxVisual) * 100);
+                                    
+                                    // Calcular compromisos individualmente para mostrar en la fila
+                                    let pendingM2 = 0;
+                                    let productionM2 = 0;
+                                    
+                                    quotes.forEach(quote => {
+                                        const isPending = quote.estado === QuoteStatus.Cotizado;
+                                        const isProduction = quote.estado === QuoteStatus.Aprobado;
+                                        if (isPending || isProduction) {
+                                            quote.items.forEach(qItem => {
+                                                if (qItem.selectedMaterialId === item.id) {
+                                                    const qty = qItem.quantities.length > 0 ? Math.max(...qItem.quantities.map(q => Number(q.cantidad))) : 0;
+                                                    const tracks = Number(qItem.produccionCarreras) || Number(qItem.troquelCarreras) || 1;
+                                                    const linear = calculateLinearMeters(Number(qItem.largo), qty, tracks);
+                                                    if (isPending) pendingM2 += linear * (item.ancho/1000);
+                                                    if (isProduction) productionM2 += linear * (item.ancho/1000);
+                                                }
+                                            });
+                                        }
+                                    });
+
                                     return (
-                                        <div key={item.id} className={`group cursor-pointer p-2 rounded flex items-center gap-4 transition-all ${isLow ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 shadow-sm' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}`} onClick={() => canEdit && handleEditClick(item)}>
-                                            <div className="w-16 flex-shrink-0 text-right"><span className="text-base font-bold text-gray-800 dark:text-gray-200">{item.ancho}mm</span></div>
-                                            <div className="flex-1 relative"><div className={`h-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden relative border ${isLow ? 'border-red-200' : 'border-gray-300 dark:border-gray-600'}`}><div className={`h-full rounded-full transition-all duration-1000 relative ${isLow ? 'bg-red-600' : ''}`} style={{ width: `${percent}%`, background: !isLow ? cardColor : undefined }}><div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,.15)_25%,transparent_25%,transparent_50%,rgba(255,255,255,.15)_50%,rgba(255,255,255,.15)_75%,transparent_75%,transparent)] bg-[length:1rem_1rem] opacity-30"></div></div>{min > 0 && <div className="absolute top-0 bottom-0 w-0.5 bg-black dark:bg-white z-10 opacity-50" style={{ left: `${(min / maxVisual) * 100}%` }}></div>}</div></div>
-                                            <div className="w-48 flex-shrink-0 text-right flex flex-col justify-center"><span className={`text-sm font-bold ${isLow ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'}`}>{current.toLocaleString()} m</span>{min > 0 && <div className="flex items-center justify-end gap-1">{isLow && <ExclamationIcon className="h-4 w-4 text-red-600 animate-pulse" />}<span className={`text-xs ${isLow ? 'text-red-600 font-bold' : 'text-gray-400'}`}>Min: {min.toLocaleString()}</span></div>}</div>
+                                        <div key={item.id} className={`group p-2 rounded flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 transition-all border ${isLow ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 shadow-sm' : 'border-transparent hover:bg-gray-50 dark:hover:bg-gray-700/50 hover:border-gray-200 dark:hover:border-gray-600'}`}>
+                                            {/* CHIP DE MEDIDA CLICKABLE PARA CORTE INTELIGENTE */}
+                                            <div className="w-20 flex-shrink-0 text-right">
+                                                <button 
+                                                    onClick={(e) => canEdit ? handleWidthClick(item, e) : null}
+                                                    className={`text-sm font-bold px-2 py-1 rounded transition-colors ${canEdit ? 'bg-gray-200 hover:bg-orange-500 hover:text-white dark:bg-gray-700 dark:text-gray-200 cursor-pointer shadow-sm' : 'text-gray-800 dark:text-gray-200 cursor-default'}`}
+                                                    title={canEdit ? "Click para calcular cortes en Jumbo" : ""}
+                                                >
+                                                    {item.ancho}mm
+                                                </button>
+                                            </div>
+                                            
+                                            {/* BARRA DE STOCK VISUAL (Click abre edición simple) */}
+                                            <div className="flex-1 flex flex-col justify-center cursor-pointer" onClick={() => canEdit && handleEditClick(item)}>
+                                                <div className={`h-3 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden relative border ${isLow ? 'border-red-200' : 'border-gray-300 dark:border-gray-600'}`}><div className={`h-full rounded-full transition-all duration-1000 relative ${isLow ? 'bg-red-600' : ''}`} style={{ width: `${percent}%`, background: !isLow ? cardColor : undefined }}><div className="absolute inset-0 bg-[linear-gradient(45deg,rgba(255,255,255,.15)_25%,transparent_25%,transparent_50%,rgba(255,255,255,.15)_50%,rgba(255,255,255,.15)_75%,transparent_75%,transparent)] bg-[length:1rem_1rem] opacity-30"></div></div>{min > 0 && <div className="absolute top-0 bottom-0 w-0.5 bg-black dark:bg-white z-10 opacity-50" style={{ left: `${(min / maxVisual) * 100}%` }}></div>}</div>
+                                                <div className="flex gap-4 mt-1 text-[10px] sm:text-xs">
+                                                    {Math.round(pendingM2) > 0 && <span className="text-orange-600 dark:text-orange-400 font-bold">Pendiente: {Math.round(pendingM2).toLocaleString()} m²</span>}
+                                                    {Math.round(productionM2) > 0 && <span className="text-blue-600 dark:text-blue-400 font-bold">Producción: {Math.round(productionM2).toLocaleString()} m²</span>}
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="w-full sm:w-48 flex-shrink-0 text-right flex flex-col justify-center cursor-pointer" onClick={() => canEdit && handleEditClick(item)}>
+                                                <span className={`text-sm font-bold ${isLow ? 'text-red-600' : 'text-gray-700 dark:text-gray-300'}`}>{current.toLocaleString()} m</span>
+                                                {min > 0 && <div className="flex items-center justify-end gap-1">{isLow && <ExclamationIcon className="h-4 w-4 text-red-600 animate-pulse" />}<span className={`text-xs ${isLow ? 'text-red-600 font-bold' : 'text-gray-400'}`}>Min: {min.toLocaleString()}</span></div>}
+                                            </div>
                                         </div>
                                     )
                                 })}
@@ -1293,7 +1648,56 @@ const StockDashboard: React.FC = () => {
                 })}
             </div>
 
-            {/* EDIT MODAL */}
+            {/* MODAL CÁLCULO M2 AUTOMÁTICO (NUEVO) */}
+            {showM2Modal && targetCutItem && (
+                <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-center p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-sm w-full border border-gray-200 dark:border-gray-700 animate-fade-in-up">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded text-sm font-mono">{targetCutItem.ancho}mm</span>
+                                Cálculo de Cortes
+                            </h3>
+                            <button onClick={() => setShowM2Modal(false)} className="text-gray-400 hover:text-gray-600"><XIcon className="h-5 w-5" /></button>
+                        </div>
+                        
+                        <div className="mb-6 space-y-3">
+                            <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-lg border border-blue-100 dark:border-blue-800">
+                                <label className="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-2">
+                                    ¿Qué cantidad total (m²) necesitas?
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        type="number" 
+                                        autoFocus
+                                        value={targetM2Request} 
+                                        onChange={(e) => setTargetM2Request(e.target.value)} 
+                                        onKeyDown={(e) => e.key === 'Enter' && handleCalculateAndOpen()}
+                                        placeholder="Ej: 1000"
+                                        className="flex-1 p-3 text-lg border border-blue-200 dark:border-blue-700 rounded-md dark:bg-gray-700 dark:text-white font-bold text-center" 
+                                    />
+                                    <span className="text-gray-500 font-bold">m²</span>
+                                </div>
+                                <p className="text-[10px] text-gray-500 mt-2 text-center">
+                                    Se calcularán automáticamente las bajadas de Jumbo necesarias.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 justify-end">
+                            <button onClick={() => setShowM2Modal(false)} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg font-bold text-sm">Cancelar</button>
+                            <button 
+                                onClick={handleCalculateAndOpen} 
+                                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-md flex items-center gap-2 text-sm"
+                            >
+                                <CalculatorIcon className="h-4 w-4" /> Calcular
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ... (Modals remain unchanged) ... */}
+            {/* EDIT MODAL (EXISTENTE) */}
             {showEditModal && editItem && (
                 <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-center p-4">
                     <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md w-full border border-gray-200 dark:border-gray-700">
@@ -1303,8 +1707,116 @@ const StockDashboard: React.FC = () => {
                             <div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Stock Físico Real (metros)</label><input type="number" value={editItem.stockMetros} onChange={(e) => setEditItem({ ...editItem, stockMetros: parseFloat(e.target.value) || 0 })} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-mono text-lg font-bold" /></div>
                             <div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1 flex justify-between"><span>Alerta de Stock Mínimo</span></label><input type="number" value={editItem.minStock || ''} onChange={(e) => setEditItem({ ...editItem, minStock: parseFloat(e.target.value) || 0 })} className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-mono text-lg text-red-500" placeholder="0" /></div>
                             <div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Color</label><div className="flex gap-2 items-center"><input type="color" value={editItem.colorHex || getColorForMaterial(editItem.codigo, editItem.nombre)} onChange={(e) => setEditItem({ ...editItem, colorHex: e.target.value })} className="h-10 w-20 rounded cursor-pointer border-0 p-0" /></div></div>
+                            
+                            {/* SECCIÓN GENERAR OC INTELIGENTE */}
+                            <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                                <h4 className="text-sm font-bold text-blue-600 dark:text-blue-400 mb-3 flex items-center gap-2">
+                                    <ShoppingCartIcon className="h-4 w-4" /> Reposición Inteligente
+                                </h4>
+                                <div className="bg-blue-50 dark:bg-blue-900/10 p-3 rounded-lg border border-blue-100 dark:border-blue-800">
+                                    <div className="mb-2 bg-white dark:bg-gray-800 p-2 rounded border border-blue-100 dark:border-blue-700 space-y-1">
+                                        <div className="flex justify-between items-center text-xs">
+                                            <span className="text-gray-500 dark:text-gray-400">Comprometido (Pendiente):</span>
+                                            <span className="font-bold text-gray-800 dark:text-white">{smartPendingM2.toLocaleString()} m²</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-xs">
+                                            <span className="text-gray-500 dark:text-gray-400">En Producción (OP):</span>
+                                            <span className="font-bold text-blue-600 dark:text-blue-400">{smartProductionM2.toLocaleString()} m²</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-between items-center mb-1">
+                                        <label className="block text-xs text-gray-500 dark:text-gray-400 uppercase font-bold">Objetivo de Compra (m²)</label>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input 
+                                            type="number" 
+                                            value={purchaseGoalM2} 
+                                            onChange={(e) => setPurchaseGoalM2(e.target.value)} 
+                                            placeholder="Ej: 10000 m²" 
+                                            className="flex-1 p-2 border rounded-md dark:bg-gray-700 dark:text-white text-sm font-bold" 
+                                        />
+                                        <button 
+                                            onClick={handleSmartRefill}
+                                            className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-md text-xs font-bold shadow whitespace-nowrap"
+                                        >
+                                            Generar OC
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-gray-400 mt-2 leading-tight">
+                                        Calcula y distribuye cortes automáticamente basándose en historial simulado.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                         <div className="mt-8 flex gap-3 justify-end"><button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg font-bold">Cancelar</button><button onClick={handleSaveItem} className="px-6 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-bold flex items-center gap-2 shadow-lg"><SaveIcon className="h-5 w-5" /> Guardar</button></div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL NUEVO: SOLICITUD RÁPIDA CON DATOS MOCK */}
+            {showQuickRequestModal && quickRequestItem && mockConsumption && (
+                <div className="fixed inset-0 bg-black bg-opacity-70 z-50 flex justify-center items-center p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl p-6 max-w-md w-full border border-gray-200 dark:border-gray-700 animate-fade-in-up">
+                        <div className="flex justify-between items-start mb-4">
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                <span className="bg-orange-100 text-orange-800 px-2 py-0.5 rounded text-sm font-mono">{quickRequestItem.codigo.substring(0,3)}</span>
+                                Solicitud por Histórico
+                            </h3>
+                            <button onClick={() => setShowQuickRequestModal(false)} className="text-gray-400 hover:text-gray-600"><XIcon className="h-5 w-5" /></button>
+                        </div>
+                        
+                        <div className="mb-6 space-y-3">
+                            <div className="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                                <p className="text-xs text-gray-500 uppercase font-bold mb-2">Datos Estadísticos (Simulados)</p>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <span className="block text-2xl font-bold text-gray-800 dark:text-white">{mockConsumption.monthly.toLocaleString()} m²</span>
+                                        <span className="text-[10px] text-gray-500">Consumo Promedio Mensual</span>
+                                    </div>
+                                    <div className="text-right">
+                                        <span className="block text-sm font-bold text-gray-700 dark:text-gray-300">{mockConsumption.lastPurchase}</span>
+                                        <span className="text-[10px] text-gray-500">Última Compra</span>
+                                    </div>
+                                </div>
+                                <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex justify-between items-center text-sm">
+                                    <span className="text-gray-500">Comprometido (Pendientes):</span>
+                                    <span className="font-bold text-orange-600">{smartPendingM2.toLocaleString()} m²</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm mt-1">
+                                    <span className="text-gray-500">En Producción (OP):</span>
+                                    <span className="font-bold text-blue-600">{smartProductionM2.toLocaleString()} m²</span>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-blue-50 dark:bg-blue-900/10 p-4 rounded-lg border border-blue-100 dark:border-blue-800">
+                                <label className="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1">
+                                    Objetivo de Compra (m²)
+                                </label>
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        type="number" 
+                                        value={purchaseGoalM2} 
+                                        onChange={(e) => setPurchaseGoalM2(e.target.value)} 
+                                        placeholder={`Sugerido: ${mockConsumption.suggestedM2}`}
+                                        className="flex-1 p-2 border border-blue-200 dark:border-blue-700 rounded-md dark:bg-gray-700 dark:text-white font-bold" 
+                                    />
+                                </div>
+                                <p className="text-[10px] text-gray-500 mt-2">
+                                    El sistema calculará automáticamente la distribución de cortes óptima basada en el histórico de pedidos.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex gap-3 justify-end">
+                            <button onClick={() => setShowQuickRequestModal(false)} className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg font-bold text-sm">Cancelar</button>
+                            <button 
+                                onClick={handleSmartRefill} 
+                                className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold shadow-md flex items-center gap-2 text-sm"
+                            >
+                                <CheckIcon className="h-4 w-4" /> Generar OC
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
@@ -1313,6 +1825,7 @@ const StockDashboard: React.FC = () => {
             {showReportModal && (
                 <div className="fixed inset-0 bg-black/95 z-50 flex justify-center items-center p-0 sm:p-4">
                     <div className="bg-white dark:bg-gray-900 sm:rounded-xl shadow-2xl w-full max-w-6xl border border-gray-200 dark:border-gray-700 flex flex-col h-full sm:h-[90vh]">
+                        {/* ... (Report Modal content unchanged, re-using existing logic) ... */}
                         <div className="p-4 sm:p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800 sm:rounded-t-xl relative">
                             <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2"><ClipboardCheckIcon className="h-6 w-6 sm:h-7 sm:w-7 text-orange-600" /> Gestión de Informes y Compras</h2>
                             <div className="flex gap-4 items-center">
@@ -1377,7 +1890,7 @@ const StockDashboard: React.FC = () => {
                                                         <th className="px-3 py-2">Código</th>
                                                         <th className="px-3 py-2">Descripción</th>
                                                         <th className="px-3 py-2 text-right">Stock Actual</th>
-                                                        <th className="px-3 py-2 text-center w-32 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-x border-orange-100 dark:border-orange-900/30">Pedir (Cant)</th>
+                                                        <th className="px-3 py-2 text-center w-48 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-300 border-x border-orange-100 dark:border-orange-900/30">Pedir (Cant/Unidad)</th>
                                                         <th className="px-3 py-2 text-center">Acción</th>
                                                     </tr>
                                                 </thead>
@@ -1393,14 +1906,24 @@ const StockDashboard: React.FC = () => {
                                                                 {entry.item.stockMetros.toLocaleString()}
                                                             </td>
                                                             <td className="px-3 py-3 bg-orange-50 dark:bg-orange-900/10 border-x border-orange-100 dark:border-orange-900/30">
-                                                                <input 
-                                                                    type="number" 
-                                                                    min="0"
-                                                                    value={entry.orderQty || ''}
-                                                                    onChange={(e) => updateOrderQty(entry.item.id, parseFloat(e.target.value) || 0)}
-                                                                    className="w-full p-1 text-center border rounded text-orange-700 font-bold focus:ring-2 focus:ring-orange-500 outline-none dark:bg-gray-800 dark:text-white dark:border-gray-600"
-                                                                    placeholder="0"
-                                                                />
+                                                                <div className="flex flex-col gap-1">
+                                                                    <input 
+                                                                        type="number" 
+                                                                        min="0"
+                                                                        value={entry.orderQty || ''}
+                                                                        onChange={(e) => updateOrderQty(entry.item.id, parseFloat(e.target.value) || 0)}
+                                                                        className="w-full p-1 text-center border rounded text-orange-700 font-bold focus:ring-2 focus:ring-orange-500 outline-none dark:bg-gray-800 dark:text-white dark:border-gray-600"
+                                                                        placeholder="0"
+                                                                    />
+                                                                    <select
+                                                                        value={entry.orderUnit || 'Unidad'}
+                                                                        onChange={(e) => updateOrderUnit(entry.item.id, e.target.value)}
+                                                                        className="w-full p-1 text-xs border rounded bg-white dark:bg-gray-800 dark:text-white dark:border-gray-600 font-bold"
+                                                                    >
+                                                                        {ORDER_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                                                                        <option value="Jumbo (Ir a Cortes)" className="bg-blue-100 text-blue-800 font-bold">➡️ Jumbo (Ir a Cortes)</option>
+                                                                    </select>
+                                                                </div>
                                                             </td>
                                                             <td className="px-3 py-3 text-center">
                                                                 <button onClick={() => removeFromReport(entry.item.id)} className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20">
@@ -1449,208 +1972,252 @@ const StockDashboard: React.FC = () => {
 
                             {reportType === 'purchase' && (
                                 <div className="flex flex-col gap-6">
-                                    <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
-                                        <div className="flex flex-col lg:flex-row gap-8">
-                                            {/* IZQUIERDA: Inputs */}
-                                            <div className="w-full lg:w-1/3 space-y-4">
-                                                <div className="flex justify-between items-center"><h3 className="font-bold text-lg dark:text-white">{editingId ? <span className="text-blue-600">Editando Ítem</span> : 'Definir Jumbo'}</h3><span className="bg-blue-100 text-blue-800 text-xs font-mono px-2 py-1 rounded border border-blue-200">{nextOCNumber}</span></div>
-                                                <div className="grid grid-cols-1 gap-4">
-                                                    <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ancho Jumbo (mm)</label><input type="number" value={currentJumbo.width} onChange={e => setCurrentJumbo({...currentJumbo, width: parseInt(e.target.value) || 0})} className="w-full p-2 border rounded-md font-bold text-center dark:bg-gray-700 dark:text-white" /></div>
-                                                    <div>
-                                                        {/* SELECTOR POR FAMILIA (3 DIGITOS) */}
-                                                        <StockMaterialFamilySelect 
-                                                            value={currentJumbo.materialId} 
-                                                            inventory={inventory} 
-                                                            onChange={(code, name) => setCurrentJumbo({...currentJumbo, materialId: code, materialCode: code, materialName: name})} 
-                                                            onConfirmSelection={() => widthInputRef.current?.focus()}
-                                                        />
-                                                    </div>
+                                    {/* JUMBO CONFIG */}
+                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                        <h3 className="font-bold text-gray-800 dark:text-white mb-4 uppercase text-sm border-b border-gray-100 dark:border-gray-700 pb-2">1. Configuración de Bobina Madre (Jumbo)</h3>
+                                        
+                                        {/* INDICADOR DE M2 VISUALIZADO EN TIEMPO REAL */}
+                                        <div className="mb-4 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800 flex justify-between items-center">
+                                            <span className="text-sm text-blue-800 dark:text-blue-300 font-bold">Total a Comprar:</span>
+                                            <span className="text-xl font-mono font-bold text-blue-900 dark:text-white">
+                                                {totalAreaM2.toLocaleString()} m²
+                                            </span>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <StockMaterialFamilySelect 
+                                                value={currentJumbo.materialCode} 
+                                                onChange={(code, name) => setCurrentJumbo(prev => ({ ...prev, materialCode: code, materialName: name, materialId: code }))} 
+                                                inventory={inventory}
+                                            />
+                                            <div className="grid grid-cols-3 gap-3">
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ancho (mm)</label>
+                                                    <input type="number" value={currentJumbo.width} onChange={e => setCurrentJumbo({...currentJumbo, width: parseFloat(e.target.value)})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" />
                                                 </div>
-
-                                                <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-100 dark:border-orange-800 space-y-3">
-                                                    <h4 className="text-sm font-bold text-orange-800 dark:text-orange-300 uppercase border-b border-orange-200 pb-1 mb-2">Definir Esquema de Cortes</h4>
-                                                    <div className="flex gap-2 items-end">
-                                                        <div className="flex-1">
-                                                            <label className="block text-xs text-gray-500 mb-1">Medida Corte (mm)</label>
-                                                            <input 
-                                                                ref={widthInputRef}
-                                                                type="number" 
-                                                                value={inputCutWidth} 
-                                                                onChange={e => setInputCutWidth(e.target.value)} 
-                                                                onKeyDown={e => e.key === 'Enter' && qtyInputRef.current?.focus()}
-                                                                className="w-full p-2 border rounded text-center font-bold dark:bg-gray-700 dark:text-white" 
-                                                                placeholder="166" 
-                                                            />
-                                                        </div>
-                                                        <div className="flex-1">
-                                                            <label className="block text-xs text-gray-500 mb-1">Cant. por Jumbo</label>
-                                                            <input 
-                                                                ref={qtyInputRef}
-                                                                type="number" 
-                                                                value={inputCutQty} 
-                                                                onChange={e => setInputCutQty(e.target.value)} 
-                                                                onKeyDown={e => e.key === 'Enter' && addCut()}
-                                                                className="w-full p-2 border rounded text-center font-bold dark:bg-gray-700 dark:text-white" 
-                                                                placeholder="8" 
-                                                            />
-                                                        </div>
-                                                        <button onClick={addCut} className="bg-orange-600 hover:bg-orange-700 text-white p-2 rounded shadow flex items-center justify-center w-10 h-10"><PlusIcon className="h-6 w-6" /></button>
-                                                        {/* BOTÓN DESHACER (Revertir Último) */}
-                                                        <button 
-                                                            onClick={undoLastCut}
-                                                            disabled={currentCuts.length === 0}
-                                                            title="Deshacer último corte"
-                                                            className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 p-2 rounded shadow flex items-center justify-center w-10 h-10 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                        >
-                                                            <UndoIcon className="h-5 w-5" />
-                                                        </button>
-                                                    </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Largo (m)</label>
+                                                    <input type="number" value={currentJumbo.length} onChange={e => setCurrentJumbo({...currentJumbo, length: parseFloat(e.target.value)})} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white" />
                                                 </div>
-
-                                                {/* NUEVO: LISTA DE CORTES AGREGADOS CON BOTÓN ELIMINAR FÁCIL */}
-                                                {currentCuts.length > 0 && (
-                                                    <div className="mt-3 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 overflow-hidden">
-                                                        <table className="w-full text-sm text-left">
-                                                            <thead className="bg-gray-100 dark:bg-gray-700 text-xs uppercase text-gray-500">
-                                                                <tr>
-                                                                    <th className="px-3 py-2">Corte</th>
-                                                                    <th className="px-3 py-2 text-center">Cant.</th>
-                                                                    <th className="px-3 py-2 text-right"></th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                                                                {currentCuts.map((cut, idx) => (
-                                                                    <tr key={cut.id}>
-                                                                        <td className="px-3 py-2 font-bold dark:text-white">{cut.width}mm</td>
-                                                                        <td className="px-3 py-2 text-center text-gray-600 dark:text-gray-300">{cut.quantity}</td>
-                                                                        <td className="px-3 py-2 text-right">
-                                                                            <button type="button" onClick={() => deleteCut(cut.id)} className="text-red-500 hover:text-red-700 p-1 bg-red-50 dark:bg-red-900/20 rounded">
-                                                                                <TrashIcon className="h-4 w-4" />
-                                                                            </button>
-                                                                        </td>
-                                                                    </tr>
-                                                                ))}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                )}
-
-                                                <div className="flex flex-col gap-2 pt-2">
-                                                    <button 
-                                                        onClick={addJumboToOC} 
-                                                        disabled={isAddButtonDisabled}
-                                                        className={`flex-1 py-3 rounded-lg font-bold shadow-xl text-sm flex items-center justify-center gap-2 text-white transform transition-all hover:scale-[1.02] ${isAddButtonDisabled ? 'bg-gray-400 cursor-not-allowed opacity-50' : (editingId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-700 hover:to-red-700')}`}
-                                                    >
-                                                        <SaveIcon className="h-4 w-4" /> {editingId ? 'Actualizar Ítem' : 'Agregar a la OC'}
-                                                    </button>
-                                                    {editingId ? <button onClick={cancelEditing} className="flex-1 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-bold text-xs">Cancelar Edición</button> : <button onClick={() => { setCurrentCuts([]); setInputCutWidth(''); setInputCutQty(''); }} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-lg font-bold text-xs">Limpiar</button>}
-                                                </div>
-                                            </div>
-
-                                            {/* DERECHA: Visualizador */}
-                                            <div className="w-full lg:w-2/3 flex flex-col bg-gray-100 dark:bg-gray-900 rounded-xl p-4 border border-gray-300 dark:border-gray-800 shadow-inner">
-                                                <JumboVisualizer jumboWidth={currentJumbo.width} cuts={currentCuts} materialCode={currentJumbo.materialCode} materialName={currentJumbo.materialName} />
-                                                
-                                                {/* INPUTS BIDIRECCIONALES (BAJADAS <-> TOTAL) */}
-                                                <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 px-4 grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
-                                                    {/* INPUT BAJADAS */}
-                                                    <div className="flex flex-col">
-                                                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 uppercase mb-1">
-                                                            Cant. Bajadas (Jumbos)
-                                                        </label>
-                                                        <div className="flex items-center gap-2">
-                                                            <input 
-                                                                type="number" 
-                                                                min="1"
-                                                                value={currentJumbo.runs} 
-                                                                onChange={e => handleRunsChange(e.target.value)}
-                                                                className="w-full p-3 text-2xl font-bold text-center border-2 border-blue-500 rounded-lg shadow-sm text-blue-600 focus:outline-none focus:ring-4 focus:ring-blue-200"
-                                                            />
-                                                            <span className="text-gray-400 font-bold">x</span>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* INPUT OBJETIVO TOTAL */}
-                                                    <div className="flex flex-col">
-                                                        <label className="block text-sm font-bold text-gray-500 dark:text-gray-400 uppercase mb-1 flex justify-between">
-                                                            <span>Objetivo Total Bobinas</span>
-                                                            <span className="text-[10px] bg-gray-200 dark:bg-gray-700 px-2 rounded text-gray-500">Cálculo Automático</span>
-                                                        </label>
-                                                        <div className="flex items-center gap-2">
-                                                            <input 
-                                                                type="number" 
-                                                                min="0"
-                                                                value={targetTotalBobinas}
-                                                                onChange={e => handleTargetTotalChange(e.target.value)}
-                                                                disabled={currentCuts.length === 0}
-                                                                placeholder={currentCuts.length === 0 ? "Defina cortes..." : "0"}
-                                                                className="w-full p-3 text-2xl font-bold text-center border-2 border-orange-500 rounded-lg shadow-sm text-orange-600 focus:outline-none focus:ring-4 focus:ring-orange-200 disabled:bg-gray-100 disabled:border-gray-300"
-                                                            />
-                                                            <span className="text-gray-400 font-bold text-sm">u.</span>
-                                                        </div>
-                                                    </div>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Bajadas (Runs)</label>
+                                                    <input type="number" value={currentJumbo.runs || 1} onChange={e => handleRunsChange(e.target.value)} className="w-full p-2 border rounded dark:bg-gray-700 dark:text-white font-bold text-center" />
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
 
-                                    {/* 2. LISTADO "CARRITO" */}
-                                    <div className="flex-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-4 sm:p-6 overflow-y-auto mb-10">
-                                        <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-800">
-                                            <label className="block text-sm font-bold text-blue-800 dark:text-blue-300 mb-1 flex items-center gap-2"><UserIcon className="h-4 w-4" /> Proveedor / Destinatario</label>
-                                            <input list="suppliers-list" type="text" value={supplierName} onChange={(e) => setSupplierName(e.target.value)} placeholder="Ej: Sres. Colacril" className="w-full p-2 border border-blue-200 dark:border-blue-700 rounded-md dark:bg-gray-700 dark:text-white focus:ring-2 focus:ring-blue-500" />
-                                            <datalist id="suppliers-list">{supplierList.map((s, i) => <option key={i} value={s} />)}</datalist>
+                                    {/* CUTS DEFINITION & VISUALIZER */}
+                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                        <h3 className="font-bold text-gray-800 dark:text-white mb-4 uppercase text-sm border-b border-gray-100 dark:border-gray-700 pb-2">2. Definición de Cortes</h3>
+                                        
+                                        {/* VISUALIZER */}
+                                        <div className="mb-6 bg-gray-900 rounded-xl p-4 overflow-hidden relative">
+                                            <JumboVisualizer 
+                                                jumboWidth={currentJumbo.width} 
+                                                cuts={currentCuts} 
+                                                materialCode={currentJumbo.materialCode}
+                                                materialName={currentJumbo.materialName}
+                                            />
                                         </div>
 
-                                        <div className="flex justify-between items-center mb-4">
-                                            <h3 className="font-bold text-lg dark:text-white flex items-center gap-2"><ShoppingCartIcon className="h-5 w-5 text-gray-500" /> Detalle de Orden de Compra</h3>
-                                            {pendingJumbos.length > 0 && <button onClick={generateOrderPDF} className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-bold shadow-md flex items-center gap-2 animate-bounce"><CheckIcon className="h-5 w-5" /> Generar Orden PDF ({pendingJumbos.length})</button>}
+                                        {/* INPUTS */}
+                                        <div className="flex flex-wrap gap-2 items-end mb-4">
+                                            <div className="w-32">
+                                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Ancho Corte (mm)</label>
+                                                <input 
+                                                    ref={widthInputRef}
+                                                    type="number" 
+                                                    value={inputCutWidth} 
+                                                    onChange={e => setInputCutWidth(e.target.value)} 
+                                                    onKeyDown={e => e.key === 'Enter' && qtyInputRef.current?.focus()}
+                                                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-bold" 
+                                                    placeholder="Ej: 100"
+                                                />
+                                            </div>
+                                            <div className="w-32">
+                                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Cant. x Jumbo</label>
+                                                <input 
+                                                    ref={qtyInputRef}
+                                                    type="number" 
+                                                    value={inputCutQty} 
+                                                    onChange={e => setInputCutQty(e.target.value)} 
+                                                    onKeyDown={e => e.key === 'Enter' && addCut()}
+                                                    className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-700 dark:text-white font-bold" 
+                                                    placeholder="Ej: 5"
+                                                />
+                                            </div>
+                                            <button onClick={addCut} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-1 shadow">
+                                                <PlusIcon className="h-5 w-5" /> Agregar
+                                            </button>
+                                            {currentCuts.length > 0 && (
+                                                <button onClick={undoLastCut} className="bg-gray-200 hover:bg-gray-300 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-3 py-2 rounded-lg font-bold flex items-center gap-1 ml-auto" title="Deshacer último corte">
+                                                    <UndoIcon className="h-5 w-5" />
+                                                </button>
+                                            )}
                                         </div>
 
-                                        {pendingJumbos.length === 0 ? <div className="text-center py-10 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded-lg"><p className="text-gray-400 font-medium">La orden está vacía.</p></div> : 
-                                            <div className="space-y-3 pb-4">
+                                        {/* CUTS LIST */}
+                                        <div className="flex flex-wrap gap-2">
+                                            {currentCuts.map((cut, idx) => (
+                                                <div key={cut.id} className="bg-gray-100 dark:bg-gray-700 rounded px-3 py-2 flex items-center gap-2 border border-gray-200 dark:border-gray-600">
+                                                    <span className="font-bold text-gray-800 dark:text-white">{cut.width}mm</span>
+                                                    <span className="text-xs text-gray-500 dark:text-gray-400">x{cut.quantity}</span>
+                                                    <button onClick={() => deleteCut(cut.id)} className="text-red-500 hover:text-red-700 ml-1"><XIcon className="h-4 w-4" /></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        
+                                        {/* TOTAL CALCULATOR (INVERSE) */}
+                                        <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between bg-blue-50 dark:bg-blue-900/10 p-3 rounded-lg">
+                                            <div className="text-sm text-blue-800 dark:text-blue-200 font-medium">
+                                                Total Bobinas Hijas: <span className="font-bold text-lg ml-1">{(currentJumbo.runs || 1) * totalCutsPerJumbo}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <label className="text-xs font-bold text-gray-500 uppercase">Objetivo Total Bobinas:</label>
+                                                <input 
+                                                    type="number" 
+                                                    min="0"
+                                                    step={totalCutsPerJumbo > 0 ? totalCutsPerJumbo : 1}
+                                                    value={targetTotalBobinas} 
+                                                    onChange={e => handleTargetTotalChange(e.target.value)} 
+                                                    disabled={currentCuts.length === 0}
+                                                    className="w-24 p-1 border rounded text-center font-bold dark:bg-gray-700 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed"
+                                                    placeholder="Calc..."
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* ADD TO ORDER BUTTON */}
+                                    <div className="flex justify-end">
+                                        {editingId && <button onClick={cancelEditing} className="mr-2 px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded text-gray-700 dark:text-gray-200 font-bold">Cancelar Edición</button>}
+                                        <button 
+                                            onClick={addJumboToOC} 
+                                            disabled={isAddButtonDisabled}
+                                            className={`px-6 py-3 rounded-lg font-bold shadow-lg flex items-center gap-2 transition-all ${isAddButtonDisabled ? 'bg-gray-300 cursor-not-allowed text-gray-500' : 'bg-orange-600 hover:bg-orange-700 text-white transform hover:scale-105'}`}
+                                        >
+                                            {editingId ? 'Actualizar Ítem' : 'Agregar Ítem a Orden'}
+                                        </button>
+                                    </div>
+
+                                    {/* PENDING ITEMS LIST */}
+                                    {pendingJumbos.length > 0 && (
+                                        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                            <div className="p-4 bg-gray-100 dark:bg-gray-700 font-bold text-gray-700 dark:text-gray-200 border-b border-gray-200 dark:border-gray-600 flex justify-between items-center">
+                                                <span>Ítems en Orden ({nextOCNumber})</span>
+                                                <span className="text-xs font-normal text-gray-500">Total: {pendingJumbos.length}</span>
+                                            </div>
+                                            <div className="divide-y divide-gray-100 dark:divide-gray-700">
                                                 {pendingJumbos.map((jumbo, idx) => (
-                                                    <div key={jumbo.id} className={`flex flex-col md:flex-row gap-4 p-4 border rounded-lg transition-all ${editingId === jumbo.id ? 'border-blue-500 ring-2 ring-blue-100 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 hover:shadow-md'}`}>
-                                                        <div className="flex-1">
-                                                            <div className="flex items-center gap-2 mb-1"><span className="bg-gray-800 text-white text-xs font-bold px-2 py-0.5 rounded">#{idx + 1}</span><span className="font-mono bg-orange-100 text-orange-800 px-2 rounded text-xs font-bold">{jumbo.materialCode}</span><h4 className="font-bold text-gray-900 dark:text-white">{jumbo.materialName}</h4></div>
-                                                            <p className="text-xs text-gray-500">Jumbo: {jumbo.jumboWidth}mm | <span className="font-bold text-blue-600">{jumbo.runs} Bajadas</span></p>
+                                                    <div key={jumbo.id} className="p-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                                        <div>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="bg-orange-100 text-orange-800 text-xs font-bold px-2 py-0.5 rounded">#{idx + 1}</span>
+                                                                <span className="font-bold text-gray-900 dark:text-white">{jumbo.materialName}</span>
+                                                                <span className="text-gray-500 text-sm">({jumbo.materialCode})</span>
+                                                            </div>
+                                                            <div className="text-sm text-gray-600 dark:text-gray-300 mt-1">
+                                                                {jumbo.jumboWidth}mm x {jumbo.jumboLength}m | {jumbo.runs} Bajadas
+                                                            </div>
+                                                            <div className="text-xs text-gray-500 mt-1">
+                                                                Cortes: {jumbo.cuts.map(c => `${c.width}mm(x${c.quantity})`).join(', ')}
+                                                            </div>
                                                         </div>
-                                                        <div className="flex-1 flex flex-wrap gap-1 items-center">
-                                                            {jumbo.cuts.map((c, i) => (
-                                                                <span key={i} className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-2 py-1 rounded text-xs font-mono dark:text-gray-300">
-                                                                    {c.width}mm <span className="text-gray-400">({c.quantity}x)</span> = <span className="text-orange-600 font-bold">{(c.quantity * (jumbo.runs || 1))}u</span>
-                                                                </span>
-                                                            ))}
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <button onClick={() => editPendingJumbo(jumbo.id)} className={`p-2 rounded transition-colors ${editingId === jumbo.id ? 'bg-blue-600 text-white shadow' : 'text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20'}`}><EditIcon className="h-5 w-5" /></button>
-                                                            <button onClick={() => removePendingJumbo(jumbo.id)} className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"><TrashIcon className="h-5 w-5" /></button>
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="text-right">
+                                                                <span className="block font-bold text-lg text-gray-900 dark:text-white">{jumbo.totalQuantity} bob.</span>
+                                                                <span className="text-xs text-gray-500">Salida Total</span>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <button onClick={() => editPendingJumbo(jumbo.id)} className="p-2 text-blue-500 hover:bg-blue-50 rounded"><EditIcon className="h-5 w-5" /></button>
+                                                                <button onClick={() => removePendingJumbo(jumbo.id)} className="p-2 text-red-500 hover:bg-red-50 rounded"><TrashIcon className="h-5 w-5" /></button>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 ))}
                                             </div>
-                                        }
-                                    </div>
+                                            <div className="p-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row justify-between items-center gap-4">
+                                                <div className="w-full sm:w-auto flex-1">
+                                                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Proveedor</label>
+                                                    <input 
+                                                        list="suppliers-list" 
+                                                        type="text" 
+                                                        value={supplierName} 
+                                                        onChange={(e) => setSupplierName(e.target.value)} 
+                                                        className="w-full p-2 border border-gray-300 rounded dark:bg-gray-700 dark:text-white dark:border-gray-600" 
+                                                        placeholder="Nombre del proveedor..." 
+                                                    />
+                                                    <datalist id="suppliers-list">
+                                                        {supplierList.map((s, i) => <option key={i} value={s} />)}
+                                                    </datalist>
+                                                </div>
+                                                <button onClick={generateOrderPDF} className="w-full sm:w-auto px-6 py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg flex items-center justify-center gap-2">
+                                                    <DownloadIcon className="h-5 w-5" /> Generar PDF Orden
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
                             {reportType === 'history' && (
-                                <div className="space-y-4">
-                                    {ocHistory.length === 0 ? <div className="text-center py-20 text-gray-400">No hay historial.</div> : ocHistory.map(order => (
-                                        <div key={order.id} className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow border border-gray-200 dark:border-gray-700 flex justify-between items-center">
-                                            <div>
-                                                <h4 className="font-bold text-blue-600 dark:text-blue-400 text-lg flex items-center gap-2">
-                                                    {order.id}
-                                                    {order.type === 'General' && <span className="bg-orange-100 text-orange-800 text-xs px-2 py-0.5 rounded border border-orange-200">General</span>}
-                                                </h4>
-                                                <p className="text-xs text-gray-500">{new Date(order.date).toLocaleString()} - {order.type === 'General' ? (order.generalItems?.length || 0) : order.items.length} Items</p>
+                                <div className="flex flex-col gap-4">
+                                    <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                                        <h3 className="font-bold text-gray-800 dark:text-white mb-4 uppercase text-sm border-b border-gray-100 dark:border-gray-700 pb-2">Historial de Órdenes</h3>
+                                        {ocHistory.length === 0 ? (
+                                            <div className="text-center py-8 text-gray-500">No hay órdenes en el historial.</div>
+                                        ) : (
+                                            <div className="overflow-x-auto">
+                                                <table className="w-full text-sm text-left">
+                                                    <thead className="text-xs text-gray-500 uppercase bg-gray-50 dark:bg-gray-700">
+                                                        <tr>
+                                                            <th className="px-4 py-3">ID Orden</th>
+                                                            <th className="px-4 py-3">Fecha</th>
+                                                            <th className="px-4 py-3">Tipo</th>
+                                                            <th className="px-4 py-3">Detalle</th>
+                                                            <th className="px-4 py-3 text-center">Acciones</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                                        {ocHistory.map(order => (
+                                                            <tr key={order.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                                                <td className="px-4 py-3 font-bold text-gray-900 dark:text-white">{order.id}</td>
+                                                                <td className="px-4 py-3">{new Date(order.date).toLocaleDateString()}</td>
+                                                                <td className="px-4 py-3">
+                                                                    <span className={`px-2 py-1 rounded text-xs font-bold ${order.type === 'General' ? 'bg-orange-100 text-orange-800' : 'bg-blue-100 text-blue-800'}`}>
+                                                                        {order.type || 'Slitter'}
+                                                                    </span>
+                                                                </td>
+                                                                <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                                                                    {order.type === 'General' 
+                                                                        ? `${order.generalItems?.length || 0} ítems` 
+                                                                        : `${order.items.length} bobinas madre`
+                                                                    }
+                                                                </td>
+                                                                <td className="px-4 py-3 text-center flex justify-center gap-2">
+                                                                    <button 
+                                                                        onClick={() => loadOrderFromHistory(order)} 
+                                                                        className="p-1 text-blue-600 hover:bg-blue-50 rounded dark:hover:bg-blue-900/20" 
+                                                                        title="Cargar para imprimir/editar"
+                                                                    >
+                                                                        <EyeIcon className="h-5 w-5" />
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => deleteHistoryOrder(order.id)} 
+                                                                        className="p-1 text-red-600 hover:bg-red-50 rounded dark:hover:bg-red-900/20" 
+                                                                        title="Eliminar"
+                                                                    >
+                                                                        <TrashIcon className="h-5 w-5" />
+                                                                    </button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
                                             </div>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => loadOrderFromHistory(order)} className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded font-bold flex items-center gap-1"><EyeIcon className="h-5 w-5" /><span className="hidden sm:inline text-sm">Ver / Editar</span></button>
-                                                <button onClick={() => deleteHistoryOrder(order.id)} className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded"><TrashIcon className="h-5 w-5" /></button>
-                                            </div>
-                                        </div>
-                                    ))}
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>

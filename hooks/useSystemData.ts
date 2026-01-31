@@ -1,6 +1,6 @@
 
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { User, DieCut, InventoryItem, FieldKey } from '../types';
+import { User, DieCut, InventoryItem, FieldKey, JumboPreset } from '../types';
 import { safeStorage } from '../storage';
 import { 
     USERS as INITIAL_USERS,
@@ -31,7 +31,8 @@ const STORAGE_KEYS = {
     USERS: 'rr_users_data',
     INVENTORY: 'rr_inventory_data',
     DIES: 'rr_dies_data',
-    LISTS: 'rr_custom_lists_data' // Para listas desplegables editables
+    LISTS: 'rr_custom_lists_data', // Para listas desplegables editables
+    JUMBOS: 'rr_jumbo_presets' // Nuevo
 };
 
 // Carga segura de LS
@@ -101,6 +102,7 @@ const useSystemData = () => {
     const [users, setUsers] = useState<User[]>(() => load(STORAGE_KEYS.USERS, INITIAL_USERS));
     const [dieCuts, setDieCuts] = useState<DieCut[]>(() => load(STORAGE_KEYS.DIES, []));
     const [inventory, setInventory] = useState<InventoryItem[]>(() => load(STORAGE_KEYS.INVENTORY, INITIAL_INVENTORY));
+    const [jumboPresets, setJumboPresets] = useState<JumboPreset[]>(() => load(STORAGE_KEYS.JUMBOS, []));
     
     const [config, setConfig] = useState(() => {
         // Cargar config y listas personalizadas combinadas
@@ -115,6 +117,7 @@ const useSystemData = () => {
     useEffect(() => { safeStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users)); }, [users]);
     useEffect(() => { safeStorage.setItem(STORAGE_KEYS.DIES, JSON.stringify(dieCuts)); }, [dieCuts]);
     useEffect(() => { safeStorage.setItem(STORAGE_KEYS.INVENTORY, JSON.stringify(inventory)); }, [inventory]);
+    useEffect(() => { safeStorage.setItem(STORAGE_KEYS.JUMBOS, JSON.stringify(jumboPresets)); }, [jumboPresets]);
     
     // Persistir Config (FieldConfig separado por compatibilidad) y Listas
     useEffect(() => {
@@ -335,6 +338,24 @@ const useSystemData = () => {
         }));
     }, []);
     
+    // --- JUMBO PRESETS ACTIONS ---
+    const addJumboPreset = useCallback((preset: JumboPreset) => {
+        setJumboPresets(prev => {
+            const exists = prev.findIndex(p => p.materialCode === preset.materialCode);
+            if (exists >= 0) {
+                // Update
+                const updated = [...prev];
+                updated[exists] = preset;
+                return updated;
+            }
+            return [...prev, preset];
+        });
+    }, []);
+
+    const removeJumboPreset = useCallback((materialCode: string) => {
+        setJumboPresets(prev => prev.filter(p => p.materialCode !== materialCode));
+    }, []);
+
     const calculatedMaterials = useMemo(() => {
         if (inventory.length > 0) {
             const sustratos = inventory.filter(i => i.tipo === 'Sustrato');
@@ -355,6 +376,7 @@ const useSystemData = () => {
         users,
         dieCuts,
         inventory,
+        jumboPresets,
         fieldConfig: config.fieldConfig,
         materials: calculatedMaterials,
         ribbons: config.ribbons,
@@ -374,10 +396,12 @@ const useSystemData = () => {
         importDieCuts,
         deleteDieCut,
         importInventory,
-        updateInventoryItem, // Nuevo: Exponer función de actualización
+        updateInventoryItem, 
         toggleFieldRequired,
         addListItem,
         removeListItem,
+        addJumboPreset,
+        removeJumboPreset,
         isAutoLoading
     };
 };

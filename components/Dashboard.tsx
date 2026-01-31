@@ -78,7 +78,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
 
   // Check quotes notifications
   const hasQuoteNotifications = useMemo(() => {
-      if (user.role === UserRole.Cotizador) {
+      // Director sees Pending quotes just like Cotizador
+      if (user.role === UserRole.Cotizador || user.role === UserRole.Director) {
           return quotes.some(q => q.estado === QuoteStatus.Pendiente);
       }
       if (user.role === UserRole.AsistenteComercial) {
@@ -137,7 +138,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, onLogout }) => {
   }, [quotes, user, searchTerm, statusFilter]);
 
   const getGreeting = () => {
-    if (user.role === UserRole.Cotizador) return "Panel del Cotizador";
+    if (user.role === UserRole.Cotizador || user.role === UserRole.Director) return "Panel del Cotizador";
     if (user.role === UserRole.AsistenteComercial) return `Mis Cotizaciones`;
     return `Vista de ${user.nombre}`;
   };
